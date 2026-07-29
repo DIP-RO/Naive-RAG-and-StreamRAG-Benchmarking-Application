@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "assessment-backend"
+version = "0.1.0"
+description = "Production-grade AI agent backend for naive RAG vs StreamRAG benchmarking"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "httpx>=0.27.0",
+  "tenacity>=8.4.0",
+  "orjson>=3.10.0",
+  "structlog>=24.1.0",
+  "python-json-logger>=2.0.7",
+  "aiosqlite>=0.20.0",
+  "qdrant-client>=1.10.1",
+  "openai>=1.40.0",
+  "anthropic>=0.31.0",
+  "google-genai>=0.3.0",
+  "langchain>=0.2.11",
+  "langgraph>=0.2.27",
+  "tiktoken>=0.7.0",
+  "anyio>=4.4.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.23.8",
+  "pytest-cov>=5.0.0",
+  "respx>=0.21.1",
+  "ruff>=0.6.2",
+  "mypy>=1.11.0"
+]
+
+[project.scripts]
+assessment-api = "app.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src/app/tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+ignore_missing_imports = true
