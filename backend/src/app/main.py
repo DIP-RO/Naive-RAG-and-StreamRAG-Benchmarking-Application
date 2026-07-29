@@ -40,4 +40,4 @@ app.include_router(router, prefix=settings.api_prefix)
 def run() -> None:
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)  # type: ignore[no-untyped-call]
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -16,7 +16,7 @@ class LLMClient(Protocol):
     async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
         ...
 
-    async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
+    def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
         ...
 
 
