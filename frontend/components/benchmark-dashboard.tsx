@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, memo } from 'react';
-import { Play, Zap, Workflow, BarChart3, Split, CheckCircle, XCircle, Clock, DollarSign, Target, Activity } from 'lucide-react';
+import { Play, Zap, Workflow, ChartColumn, Split, CircleCheck, CircleX, Clock, DollarSign, Target, Activity } from 'lucide-react';
 import { runBenchmark, sendChat, type ChatResponse, type BenchmarkResponse } from '@/lib/api';
 
 type MetricBadgeProps = {
@@ -201,12 +201,12 @@ export function BenchmarkDashboard() {
             <MetricBadge
               label="Naive Tokens"
               value={naiveRecord ? `${naiveRecord.total_tokens}` : '-'}
-              icon={<BarChart3 className="h-4 w-4" />}
+              icon={<ChartColumn className="h-4 w-4" />}
             />
             <MetricBadge
               label="Stream Tokens"
               value={streamRecord ? `${streamRecord.total_tokens}` : '-'}
-              icon={<BarChart3 className="h-4 w-4" />}
+              icon={<ChartColumn className="h-4 w-4" />}
             />
             <MetricBadge
               label="Naive Grounding"
@@ -222,13 +222,13 @@ export function BenchmarkDashboard() {
             <MetricBadge
               label="Naive Failures"
               value={naiveRecord ? `${naiveRecord.failures}` : '-'}
-              icon={naiveRecord?.failures ? <XCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+              icon={naiveRecord?.failures ? <CircleX className="h-4 w-4" /> : <CircleCheck className="h-4 w-4" />}
               good={naiveRecord ? naiveRecord.failures === 0 : undefined}
             />
             <MetricBadge
               label="Stream Failures"
               value={streamRecord ? `${streamRecord.failures}` : '-'}
-              icon={streamRecord?.failures ? <XCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+              icon={streamRecord?.failures ? <CircleX className="h-4 w-4" /> : <CircleCheck className="h-4 w-4" />}
               good={streamRecord ? streamRecord.failures === 0 : undefined}
             />
           </div>
