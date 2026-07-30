@@ -26,10 +26,10 @@ AI Agent comparing Naive RAG and StreamRAG in a full-stack production system wit
 
 ## Test Output
 
-![Naive RAG output showing company_overview.txt chunk with CEO details & one tool calling](images/Screenshot%202026-07-30%20at%2017.51.02.png)
+![one tool calling](images/Screenshot%202026-07-30%20at%2017.51.02.png)
 
 
-![StreamRAG response and benchmark dashboard with latency, grounding, hallucination metrics](images/Screenshot%202026-07-30%20at%2018.52.58.png)
+![RAG output showing tool calling company_overview.txt chunk with CEO details benchmark dashboard with latency, grounding, hallucination metrics](images/Screenshot%202026-07-30%20at%2018.52.58.png)
 
 ## Architecture
 
