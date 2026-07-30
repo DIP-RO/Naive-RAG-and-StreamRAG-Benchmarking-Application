@@ -7,7 +7,6 @@ from time import perf_counter
 from typing import Any, TypedDict
 from uuid import uuid4
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langsmith import traceable
 
@@ -45,7 +44,6 @@ class AgentState(TypedDict):
     prompt_messages: list[ChatMessage]
     answer_text: str
     usage: dict[str, int]
-    answer_parts: list[str]
     started: float
 
 
@@ -86,34 +84,31 @@ class AgentOrchestrator:
         graph.add_edge("build_context", "generate")
         graph.add_edge("generate", END)
 
-        return graph.compile(checkpointer=MemorySaver())
+        return graph.compile()
 
-    async def _node_initialize(self, state: AgentState) -> AgentState:
+    async def _node_initialize(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         conversation_id = state["conversation_id"]
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
-        state["history"] = history
-        return state
+        return {"history": history}
 
-    async def _node_retrieve(self, state: AgentState) -> AgentState:
+    async def _node_retrieve(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         chunks = await self.deps.vector_store.search(request.message, limit=self.deps.settings.naive_top_k)
         reranked = self.deps.reranker.rerank(request.message, chunks)
-        state["retrieved_chunks"] = chunks
-        state["reranked"] = reranked
-        return state
+        return {"retrieved_chunks": chunks, "reranked": reranked}
 
-    async def _node_run_tools(self, state: AgentState) -> AgentState:
-        state["tool_results"] = await self._maybe_run_tools(state["request"].message)
-        return state
+    async def _node_run_tools(self, state: AgentState) -> dict[str, Any]:
+        results = await self._maybe_run_tools(state["request"].message)
+        return {"tool_results": results}
 
-    async def _node_run_skills(self, state: AgentState) -> AgentState:
-        state["skill_results"] = await self.deps.skills.run_matching(state["request"].message, context={})
-        return state
+    async def _node_run_skills(self, state: AgentState) -> dict[str, Any]:
+        results = await self.deps.skills.run_matching(state["request"].message, context={})
+        return {"skill_results": results}
 
-    async def _node_build_context(self, state: AgentState) -> AgentState:
+    async def _node_build_context(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         context_text = self._build_context_text(state["reranked"], state["tool_results"], state["skill_results"])
         summary = await self.deps.conversation_store.get_summary(state["conversation_id"])
@@ -128,12 +123,9 @@ class AgentOrchestrator:
             ),
             model=request.model or self.deps.settings.default_llm_model,
         )
-        state["context_text"] = context_text
-        state["summary"] = summary.summary if summary else None
-        state["prompt_messages"] = prompt_messages
-        return state
+        return {"context_text": context_text, "summary": summary.summary if summary else None, "prompt_messages": prompt_messages}
 
-    async def _node_generate(self, state: AgentState) -> AgentState:
+    async def _node_generate(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         answer_text, usage = await self.deps.llm.generate_text(
             state["prompt_messages"],
@@ -143,9 +135,7 @@ class AgentOrchestrator:
         await self.deps.conversation_store.append(state["conversation_id"], ChatMessage(role="assistant", content=answer_text))
         if count_tokens(state["context_text"]) > 2_000:
             await self.deps.conversation_store.store_summary(state["conversation_id"], self._summarize_locally(state["history"], request.message, answer_text))
-        state["answer_text"] = answer_text
-        state["usage"] = usage
-        return state
+        return {"answer_text": answer_text, "usage": usage}
 
     @traceable(run_type="chain", name="AgentOrchestrator.answer")
     async def answer(self, request: ChatRequest) -> ChatResponse:
@@ -167,12 +157,10 @@ class AgentOrchestrator:
             "prompt_messages": [],
             "answer_text": "",
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "answer_parts": [],
             "started": started,
         }
 
-        config = {"configurable": {"thread_id": conversation_id}}
-        result = await self._graph.ainvoke(initial_state, config)
+        result = await self._graph.ainvoke(initial_state)
         latency_ms = (perf_counter() - started) * 1000.0
 
         tool_results = result.get("tool_results", [])

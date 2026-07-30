@@ -34,7 +34,13 @@ class AppSettings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_app_name: str = "Applied AI Engineer Assessment"
     openrouter_referer: str | None = None
-    default_llm_provider: Literal["openai", "anthropic", "google", "openrouter"] = "openrouter"
+    langchain_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LANGCHAIN_API_KEY", "LANGSMITH_API_KEY"),
+    )
+    langchain_project: str = "assessment-agent"
+    langchain_tracing_v2: bool = False
+    default_llm_provider: Literal["openai", "openrouter"] = "openrouter"
     default_llm_model: str = "gpt-4.1"
     default_embedding_model: str = "text-embedding-3-small"
 

@@ -90,8 +90,8 @@ class BenchmarkRecord(BaseModel):
     estimated_cost_usd: float = 0.0
     memory_bytes: int = 0
     failures: int = 0
-    hallucination_rate: float = 0.0
-    grounding_score: float = 0.0
+    hallucination_rate: float | None = None
+    grounding_score: float | None = None
 
 
 class BenchmarkResponse(BaseModel):

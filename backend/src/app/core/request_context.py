@@ -4,7 +4,6 @@ from contextvars import ContextVar
 from uuid import uuid4
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
-conversation_id_var: ContextVar[str] = ContextVar("conversation_id", default="")
 
 
 def new_request_id() -> str:

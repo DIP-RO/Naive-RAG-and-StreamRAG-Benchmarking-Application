@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from uuid import uuid4
 
 from app.utils.text import normalize_whitespace, split_sentences
 
@@ -42,7 +43,7 @@ class Chunker:
             if buffer and len(candidate) > self.max_chars:
                 chunks.append(
                     Chunk(
-                        chunk_id=f"{document_id}:{chunk_index}",
+                        chunk_id=str(uuid4()),
                         document_id=document_id,
                         title=title,
                         content=" ".join(buffer),
@@ -56,7 +57,7 @@ class Chunker:
         if buffer:
             chunks.append(
                 Chunk(
-                    chunk_id=f"{document_id}:{chunk_index}",
+                    chunk_id=str(uuid4()),
                     document_id=document_id,
                     title=title,
                     content=" ".join(buffer),
