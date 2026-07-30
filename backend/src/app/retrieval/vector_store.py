@@ -74,7 +74,7 @@ class QdrantVectorStore(VectorStoreProtocol):
             query=query_vector,
             limit=limit,
             with_payload=True,
-            score_threshold=0.15,
+            score_threshold=0.05,
         )
         chunks: list[RetrievalChunk] = []
         for result in response.points:

@@ -1,0 +1,13 @@
+Renewable Energy Sources
+
+Renewable energy comes from natural sources that replenish faster than they are consumed. The global transition to renewables is driven by climate goals, falling costs, and energy security concerns.
+
+Solar energy is captured through photovoltaic panels that convert sunlight directly into electricity. Utility-scale solar farms and rooftop installations have grown rapidly. Solar capacity has doubled every three years, with costs dropping by 90% over the past decade. Perovskite solar cells promise even higher efficiencies in the future.
+
+Wind energy uses turbines to convert kinetic energy from wind into electricity. Offshore wind farms benefit from stronger and more consistent winds than onshore installations. The largest turbines now exceed 15 MW capacity with blade lengths over 100 meters. Denmark generates over 40% of its electricity from wind power.
+
+Hydropower is the oldest and largest source of renewable electricity. Run-of-river systems have minimal environmental impact compared to large dams with reservoirs. Pumped-storage hydropower provides grid-scale energy storage by moving water between reservoirs at different elevations.
+
+Energy storage addresses the intermittency of solar and wind. Lithium-ion battery costs have fallen by 85% since 2010, making grid-scale storage economically viable. Alternative storage technologies include flow batteries, compressed air energy storage, and green hydrogen produced through electrolysis.
+
+Grid modernization is essential for integrating variable renewables. Smart grids use sensors and automation to balance supply and demand. Microgrids provide local resilience and can operate independently during main grid outages.

@@ -1,0 +1,13 @@
+AI Ethics and Responsible Development
+
+AI ethics addresses the moral implications of artificial intelligence systems. As AI capabilities grow, ensuring responsible development and deployment becomes critical.
+
+Bias in AI systems can perpetuate or amplify societal inequalities. Training data that underrepresents certain groups leads to models that perform poorly for those populations. Facial recognition systems have shown higher error rates for women and people with darker skin tones. Mitigation strategies include diverse dataset curation, fairness-aware algorithms, and regular bias audits.
+
+Transparency and explainability are essential for trust. Black-box models make it difficult to understand why decisions are made. Explainable AI techniques include SHAP values, LIME, and attention visualization. Regulations like the EU AI Act mandate explainability for high-risk AI systems.
+
+Privacy concerns arise from AI's ability to infer sensitive information from seemingly innocuous data. Differential privacy adds calibrated noise to training data to prevent individual record reconstruction. Federated learning trains models across distributed devices without centralizing raw data, enhancing privacy by design.
+
+Accountability frameworks determine who is responsible when AI systems cause harm. The concept of meaningful human control requires that humans maintain oversight over critical AI decisions. Algorithmic impact assessments evaluate potential harms before deployment.
+
+Safety research focuses on aligning AI systems with human values. Reinforcement learning from human feedback (RLHF) and constitutional AI are techniques used to steer model behavior. Red-teaming exercises probe for vulnerabilities and harmful outputs before release.

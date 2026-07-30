@@ -1,0 +1,13 @@
+Database Systems and Data Management
+
+Modern applications rely on database systems to store, retrieve, and manage data efficiently. Two primary categories exist: relational and non-relational databases.
+
+Relational databases (SQL) organize data into tables with predefined schemas. They use Structured Query Language for data manipulation and support ACID transactions (Atomicity, Consistency, Isolation, Durability). Popular relational systems include PostgreSQL, MySQL, and SQLite. They excel at complex queries involving joins across multiple tables and enforce data integrity through constraints and foreign keys.
+
+NoSQL databases offer flexible schemas and horizontal scalability. Key types include document stores (MongoDB), key-value stores (Redis), column-family stores (Cassandra), and graph databases (Neo4j). They are optimized for specific access patterns and scale horizontally through sharding and replication.
+
+Indexing is critical for query performance. B-tree indexes support range queries and equality lookups efficiently. Hash indexes provide O(1) lookups for exact matches. Vector indexes like HNSW enable similarity search on embeddings, which is essential for RAG applications.
+
+Query optimization involves choosing efficient execution plans. Databases use cost-based optimizers that estimate the resources required for different strategies. Key techniques include index-only scans, bitmap scans, and materialized views for pre-computed aggregations.
+
+Connection pooling maintains persistent connections to avoid the overhead of establishing new connections for each request. Tools like PgBouncer and RDS Proxy manage connection pools for high-traffic applications.

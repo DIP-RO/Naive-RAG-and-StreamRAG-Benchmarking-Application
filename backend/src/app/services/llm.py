@@ -203,7 +203,24 @@ class EchoLLMClient:
                 content = line[colon + 1:].strip()
                 if content:
                     results.append(content)
-        return "\n".join(results) if results else None
+        if results:
+            return "\n".join(results)
+        evidence_prefix = "Retrieved evidence:"
+        if evidence_prefix in system_text:
+            idx = system_text.index(evidence_prefix)
+            evidence = system_text[idx + len(evidence_prefix):].strip()
+            chunks = []
+            for line in evidence.split("\n"):
+                line = line.strip()
+                if line.startswith("[") and "]" in line:
+                    colon = line.index("]")
+                    title = line[1:colon]
+                    content = line[colon + 1:].strip()
+                    if content:
+                        chunks.append(f"[{title}] {content[:200]}")
+            if chunks:
+                return "\n\n".join(chunks[:2])
+        return None
 
 
 class LLMFactory:

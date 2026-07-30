@@ -1,0 +1,13 @@
+Cybersecurity Fundamentals
+
+Cybersecurity protects systems, networks, and data from digital attacks. The CIA triad guides security principles: Confidentiality, Integrity, and Availability.
+
+Common attack vectors include phishing (deceptive emails tricking users into revealing credentials), SQL injection (malicious queries inserted into input fields), cross-site scripting (XSS) where attackers inject client-side scripts, and man-in-the-middle attacks that intercept communications. Ransomware encrypts victim data and demands payment for decryption keys.
+
+Encryption protects data at rest and in transit. Symmetric encryption (AES, ChaCha20) uses the same key for encryption and decryption and is fast for bulk data. Asymmetric encryption (RSA, ECDSA) uses public-private key pairs for secure key exchange and digital signatures. TLS secures web communications by encrypting HTTP traffic.
+
+Authentication and authorization are distinct concepts. Authentication verifies identity through passwords, biometrics, or multi-factor authentication. Authorization determines what an authenticated user can access using role-based access control (RBAC) or attribute-based access control (ABAC).
+
+The OWASP Top 10 lists the most critical web application security risks. Broken access control, cryptographic failures, and injection attacks consistently rank among the top threats. Regular security audits, dependency scanning, and penetration testing help identify vulnerabilities.
+
+Zero-trust architecture assumes no network is trustworthy. It requires continuous verification of every request regardless of origin, implements least-privilege access, and segments networks to limit lateral movement during breaches.

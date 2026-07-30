@@ -155,7 +155,7 @@ class CitationVerifier:
 
 @dataclass
 class RelevanceFilter:
-    min_score: float = 0.15
+    min_score: float = 0.05
 
     def filter_chunks(self, chunks: list[RetrievalChunk]) -> list[RetrievalChunk]:
         return [chunk for chunk in chunks if chunk.score >= self.min_score]

@@ -10,7 +10,11 @@ from app.models.schemas import BenchmarkRequest, ChatRequest, IngestDocumentRequ
 
 router = APIRouter()
 
-ALLOWED_DOC_DIRS = [Path("documents").resolve(), Path("../documents").resolve()]
+ALLOWED_DOC_DIRS = [
+    Path("documents").resolve(),
+    Path("../documents").resolve(),
+    Path("../../documents").resolve(),
+]
 
 
 def _resolve_safe_path(file_path: str) -> Path:
