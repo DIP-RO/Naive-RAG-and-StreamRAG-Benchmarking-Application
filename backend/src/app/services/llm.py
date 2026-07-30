@@ -169,19 +169,53 @@ class EchoLLMClient:
     async def generate_text(
         self, messages: list[ChatMessage], *, model: str, max_tokens: int
     ) -> tuple[str, dict[str, int]]:
-        system_msg = next(
-            (message.content for message in messages if message.role == "system"), ""
+        user_message = next(
+            (message.content for message in reversed(messages) if message.role == "user"), ""
         )
-        tool_results = self._extract_tool_results(system_msg)
-        if tool_results:
-            answer = tool_results
-        else:
-            user_message = next(
-                (message.content for message in reversed(messages) if message.role == "user"), ""
-            )
+        all_system = [
+            m.content for m in messages if m.role == "system"
+        ]
+        system_text = all_system[-1] if all_system else ""
+
+        answer = None
+        for line in system_text.split("\n"):
+            line = line.strip()
+            if line.startswith("[tool:") and "]" in line:
+                colon = line.index("]")
+                content = line[colon + 1:].strip()
+                if content:
+                    answer = content
+        if answer:
+            return answer, {"prompt_tokens": 0, "completion_tokens": len(answer) // 4, "total_tokens": 0}
+
+        evidence_prefix = "Retrieved evidence:"
+        if evidence_prefix in system_text:
+            idx = system_text.index(evidence_prefix)
+            evidence = system_text[idx + len(evidence_prefix):].strip()
+            candidates = []
+            for line in evidence.split("\n"):
+                line = line.strip()
+                if line.startswith("[") and "]" in line:
+                    colon = line.index("]")
+                    title = line[1:colon]
+                    content = line[colon + 1:].strip()
+                    if content:
+                        import re as _re
+                        qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
+                        ct = {t.strip("?,.;:!\"'()[]{}-") for t in content.lower().split()} - {""}
+                        tt = {w for w in _re.split(r"[^a-z0-9]+", title.lower()) if w}
+                        cs = len(qt & ct)
+                        tss = len(qt & tt)
+                        candidates.append((cs, tss, title, content))
+            if candidates:
+                candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                _, _, best_title, best_content = candidates[0]
+                answer = f"[{best_title}] {best_content[:300]}"
+
+        if not answer:
             answer = f"Fallback answer for: {user_message}"
         return answer, {
-            "prompt_tokens": sum(len(message.content) for message in messages) // 4,
+            "prompt_tokens": sum(len(m.content) for m in messages) // 4,
             "completion_tokens": len(answer) // 4,
             "total_tokens": 0,
         }
@@ -192,35 +226,6 @@ class EchoLLMClient:
         answer, _ = await self.generate_text(messages, model=model, max_tokens=max_tokens)
         for token in answer.split():
             yield token + " "
-
-    @staticmethod
-    def _extract_tool_results(system_text: str) -> str | None:
-        results: list[str] = []
-        for line in system_text.split("\n"):
-            line = line.strip()
-            if line.startswith("[tool:") and "]" in line:
-                colon = line.index("]")
-                content = line[colon + 1:].strip()
-                if content:
-                    results.append(content)
-        if results:
-            return "\n".join(results)
-        evidence_prefix = "Retrieved evidence:"
-        if evidence_prefix in system_text:
-            idx = system_text.index(evidence_prefix)
-            evidence = system_text[idx + len(evidence_prefix):].strip()
-            chunks = []
-            for line in evidence.split("\n"):
-                line = line.strip()
-                if line.startswith("[") and "]" in line:
-                    colon = line.index("]")
-                    title = line[1:colon]
-                    content = line[colon + 1:].strip()
-                    if content:
-                        chunks.append(f"[{title}] {content[:200]}")
-            if chunks:
-                return "\n\n".join(chunks[:2])
-        return None
 
 
 class LLMFactory:

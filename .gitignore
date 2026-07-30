@@ -14,6 +14,7 @@ frontend/out/
 env/
 .DS_Store
 backend/data/
+backend/src/data/
 .qodo/
 *.pyc
 __pycache__/
