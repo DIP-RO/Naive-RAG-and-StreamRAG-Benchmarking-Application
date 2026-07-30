@@ -259,6 +259,14 @@ npm install
 npm run dev
 ```
 
+### Ingest documents into Qdrant
+
+```bash
+cd backend
+assessment-ingest
+# Re-runs after Qdrant restart to populate the vector store
+```
+
 ### Run benchmark
 
 ```bash

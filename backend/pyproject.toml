@@ -41,6 +41,7 @@ dev = [
 
 [project.scripts]
 assessment-api = "app.main:run"
+assessment-ingest = "app.cli:ingest"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/app"]
