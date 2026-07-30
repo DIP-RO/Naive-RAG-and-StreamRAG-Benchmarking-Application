@@ -51,13 +51,14 @@ class CalculatorTool:
             val, total = float(percentage_match.group(1)), float(percentage_match.group(2))
             return f"{val}*{total}/100"
         match = re.search(
-            r"[-+]?\d+(?:\.\d+)?\s*[\+\-\*/%]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*/%]\s*\d+(?:\.\d+)?)*",
+            r"(?<!\w)([-+]?\d+(?:\.\d+)?)\s*[\+\-\*/%]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*/%]\s*\d+(?:\.\d+)?)*(?!\w)",
             text,
         )
         if match:
             expr = match.group(0).replace("%", "/100*")
             return expr
-        return text
+        msg = f"No arithmetic expression found in: {text}"
+        raise ValueError(msg)
 
     def _safe_eval(self, expression: str) -> float:
         node = ast.parse(expression, mode="eval")

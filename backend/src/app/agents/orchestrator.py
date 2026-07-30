@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -435,7 +436,7 @@ class AgentOrchestrator:
     async def _maybe_run_tools(self, message: str) -> list[Any]:
         requested: list[tuple[ToolName, str]] = []
         lowered = message.lower()
-        if any(symbol in lowered for symbol in ["+", "-", "*", "/", "%", "calculate", "compute"]):
+        if re.search(r"(?<!\w)[-+]?\d+\s*[\+\-\*/%]", lowered) or any(word in lowered for word in ["calculate", "compute"]):
             requested.append((ToolName.calculator, message))
         if any(word in lowered for word in ["time", "date", "today", "now"]):
             requested.append((ToolName.datetime, message))
