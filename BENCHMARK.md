@@ -26,18 +26,18 @@ python scripts/run_benchmark.py
 
 This will run both RAG paths against all 10 queries and output a JSON report.
 
-## Results (EchoLLM Mock — 10 queries × 2 trials)
+## Results (EchoLLM Mock — 10 queries × 2 trials, fresh run)
 
 | Metric                  | Naive RAG         | StreamRAG         |
 |-------------------------|-------------------|-------------------|
-| Avg latency (ms)        | 18.0              | 6.5               |
-| Time to first token (ms)| 10.8              | 1.9               |
-| Avg prompt tokens       | 286.7             | 7.5               |
-| Avg completion tokens   | 12.4              | 11.7              |
-| Avg total tokens        | 299.1             | 19.4              |
-| Est. cost per query     | $0.00085          | $0.00014          |
-| Grounding score         | 1.0000            | 0.7083            |
-| Hallucination rate      | 0.0000            | 0.2917            |
+| Avg latency (ms)        | 19.4              | 6.9               |
+| Time to first token (ms)| 11.7              | 2.1               |
+| Avg prompt tokens       | 556               | 8                 |
+| Avg completion tokens   | 12                | 12                |
+| Avg total tokens        | 569               | 19                |
+| Est. cost per query     | $0.001515         | $0.000136         |
+| Grounding score         | 0.8000            | 0.0000            |
+| Hallucination rate      | 0.2000            | 1.0000            |
 | Failures                | 0                 | 0                 |
 
 **Winner by latency:** StreamRAG (64% faster total, 82% faster TTFT)
@@ -52,7 +52,7 @@ With the new guardrail system, all queries pass through:
 | PII detection          | 100%      | No PII in test queries |
 | Output content safety  | 100%      | EchoLLM responses are benign |
 | Relevance filtering    | 100%      | All retrieved chunks exceed 0.15 threshold |
-| Citation grounding     | 92% avg   | Naive: 100% (context provided), Stream: 71% (no context in mock) |
+| Citation grounding     | 40% avg   | Naive: 80% (context provided), Stream: 0% (no context in mock) |
 
 ## Analysis
 
@@ -67,7 +67,9 @@ The significant latency advantage for StreamRAG comes from:
 
 ### Grounding & Hallucination
 
-Naive RAG achieves perfect grounding scores because its prompt includes full context from retrieved chunks, and the EchoLLM fallback answer reuses query terms that naturally overlap with chunk content. StreamRAG shows lower grounding in mock mode because the streaming answer is generated without full context in the initial pass — this is expected and would improve with a real LLM that can reason over the incrementally provided context.
+Naive RAG achieves 0.80 grounding because the EchoLLM fallback answer ("Fallback answer for: {query}") has partial keyword overlap with the retrieved chunk content. The 0.20 hallucination rate comes from answer sentences that introduce phrasing not present in any chunk.
+
+StreamRAG shows 0.0000 grounding and 1.0000 hallucination rate in mock mode. This is expected: the benchmark runner does not extract retrieval chunks from stream events, so the `CitationVerifier` has no context to compare against. With a real LLM integration that passes chunk content alongside stream deltas, the grounding score would improve significantly.
 
 In production with a real LLM (e.g., GPT-4o), the absolute latencies will be higher, but the relative advantage of StreamRAG (parallelism, reduced context, streaming) should remain proportional.
 
@@ -75,6 +77,7 @@ In production with a real LLM (e.g., GPT-4o), the absolute latencies will be hig
 
 - **Grounding/hallucination scores**: Computed via `CitationVerifier` using sentence-level keyword overlap between answer and retrieved chunks. Available on every `ChatResponse` as `grounding_score` and `hallucination_rate` fields.
 - **Guardrails trace**: Every response includes a `guardrails` field with `input_blocked`, `pii_redacted`, and `output_blocked` status.
+- **Stream grounding**: StreamRAG shows 0 grounding in this benchmark because the runner does not pass citations to the grounding verifier for stream mode. This is a runner limitation, not a StreamRAG pipeline limitation.
 - **Memory usage**: Both modes use negligible memory in mock mode. Production measurements would require real model inference.
 - **Cold start**: The first query (Q1) was ~10× slower for Naive RAG due to lazy initialization; averaged across all queries, this inflates Naive's mean slightly.
 
