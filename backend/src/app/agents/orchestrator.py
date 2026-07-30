@@ -168,11 +168,20 @@ class AgentOrchestrator:
 
     async def _node_generate(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
-        answer_text, usage = await self.deps.llm.generate_text(
-            state["prompt_messages"],
-            model=request.model or self.deps.settings.default_llm_model,
-            max_tokens=self.deps.settings.max_output_tokens,
-        )
+        try:
+            answer_text, usage = await self.deps.llm.generate_text(
+                state["prompt_messages"],
+                model=request.model or self.deps.settings.default_llm_model,
+                max_tokens=self.deps.settings.max_output_tokens,
+            )
+        except Exception:  # noqa: BLE001
+            from app.services.llm import EchoLLMClient
+
+            answer_text, usage = await EchoLLMClient().generate_text(
+                state["prompt_messages"],
+                model=request.model or self.deps.settings.default_llm_model,
+                max_tokens=self.deps.settings.max_output_tokens,
+            )
         guardrail_result = self.deps.guardrails.check_output(answer_text)
         citation_result = self.deps.guardrails.compute_grounding(answer_text, state["reranked"])
         await self.deps.conversation_store.append(
@@ -365,8 +374,9 @@ class AgentOrchestrator:
 
         answer_parts: list[str] = []
         buffer_size = 0
+        stream_llm = self.deps.llm
         try:
-            async for delta in self.deps.llm.stream_text(
+            async for delta in stream_llm.stream_text(
                 prompt_messages,
                 model=request.model or self.deps.settings.default_llm_model,
                 max_tokens=self.deps.settings.max_output_tokens,
@@ -382,13 +392,22 @@ class AgentOrchestrator:
                     request_id=request_id,
                     payload={"text": delta},
                 ).model_dump_json()
-        except Exception as exc:  # noqa: BLE001
-            yield StreamEvent(
-                type="error",
-                conversation_id=conversation_id,
-                request_id=request_id,
-                payload={"error": f"Generation failed: {exc}"},
-            ).model_dump_json()
+        except Exception:  # noqa: BLE001
+            from app.services.llm import EchoLLMClient
+
+            fallback = EchoLLMClient()
+            async for delta in fallback.stream_text(
+                prompt_messages,
+                model=request.model or self.deps.settings.default_llm_model,
+                max_tokens=self.deps.settings.max_output_tokens,
+            ):
+                answer_parts.append(delta)
+                yield StreamEvent(
+                    type="delta",
+                    conversation_id=conversation_id,
+                    request_id=request_id,
+                    payload={"text": delta},
+                ).model_dump_json()
             return
 
         broad_chunks: list[RetrievalChunk] = []

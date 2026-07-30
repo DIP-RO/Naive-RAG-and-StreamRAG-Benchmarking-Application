@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from app.core.config import AppSettings
@@ -65,7 +66,6 @@ class LangChainChatClient:
             "model": model,
             "temperature": 0.2,
             "max_tokens": max_tokens,
-            "http_client": SHARED_HTTP_CLIENT,
         }
         if self.base_url:
             kwargs["base_url"] = self.base_url
@@ -160,6 +160,57 @@ class OpenRouterClient:
                 delta = event.get("choices", [{}])[0].get("delta", {}).get("content")
                 if delta:
                     yield delta
+
+
+@dataclass
+class GoogleGenAIClient:
+    """LangChain-based client for Google Gemini models."""
+
+    api_key: str
+    default_model: str = "gemini-flash-latest"
+
+    def _build_llm(self, model: str, max_tokens: int) -> ChatGoogleGenerativeAI:
+        return ChatGoogleGenerativeAI(
+            api_key=self.api_key,
+            model=model,
+            temperature=0.2,
+            max_output_tokens=max_tokens,
+        )
+
+    async def generate_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> tuple[str, dict[str, int]]:
+        llm = self._build_llm(model, max_tokens)
+        lc_messages = _to_langchain(messages)
+        response = await llm.ainvoke(lc_messages)
+        if isinstance(response.content, str):
+            text = response.content
+        elif isinstance(response.content, list):
+            parts = [p.get("text", "") for p in response.content if isinstance(p, dict)]
+            text = " ".join(parts)
+        else:
+            text = ""
+        return text, {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+    async def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]:
+        llm = self._build_llm(model, max_tokens)
+        lc_messages = _to_langchain(messages)
+        async for chunk in llm.astream(lc_messages):
+            if isinstance(chunk.content, str):
+                text = chunk.content
+            elif isinstance(chunk.content, list):
+                parts = [p.get("text", "") for p in chunk.content if isinstance(p, dict)]
+                text = " ".join(parts)
+            else:
+                text = ""
+            if text:
+                yield text
 
 
 @dataclass
@@ -397,10 +448,12 @@ class LLMFactory:
     @staticmethod
     def build(settings: AppSettings) -> LLMClient:
         provider = settings.default_llm_provider
+        if provider == "google" and settings.google_api_key:
+            return GoogleGenAIClient(api_key=settings.google_api_key)
         if provider == "openrouter" and settings.openrouter_api_key:
             return LangChainChatClient(
                 api_key=settings.openrouter_api_key,
-                base_url=settings.openrouter_base_url.rstrip("/") + "/v1",
+                base_url=settings.openrouter_base_url.rstrip("/"),
             )
         if provider == "openai" and settings.openai_api_key:
             return LangChainChatClient(api_key=settings.openai_api_key)

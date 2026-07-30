@@ -11,7 +11,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AppSettings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parent.parent.parent.parent / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "Assessment Agent"
     environment: Literal["dev", "test", "staging", "prod"] = "dev"
@@ -42,7 +46,7 @@ class AppSettings(BaseSettings):
     )
     langchain_project: str = "assessment-agent"
     langchain_tracing_v2: bool = False
-    default_llm_provider: Literal["openai", "openrouter"] = "openrouter"
+    default_llm_provider: Literal["openai", "openrouter", "google"] = "google"
     default_llm_model: str = "gpt-4.1"
     default_embedding_model: str = "text-embedding-3-small"
 
