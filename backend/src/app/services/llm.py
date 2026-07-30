@@ -164,11 +164,20 @@ class OpenRouterClient:
 
 @dataclass
 class GoogleGenAIClient:
-    """LangChain-based client for Google Gemini models with fallback key."""
+    """LangChain-based client for Google Gemini models with fallback keys."""
 
     api_key: str
     fallback_api_key: str | None = None
+    fallback_api_key_2: str | None = None
     default_model: str = "gemini-flash-latest"
+
+    def _all_keys(self) -> list[str]:
+        keys = [self.api_key]
+        if self.fallback_api_key:
+            keys.append(self.fallback_api_key)
+        if self.fallback_api_key_2:
+            keys.append(self.fallback_api_key_2)
+        return keys
 
     def _build_llm(self, model: str, max_tokens: int) -> ChatGoogleGenerativeAI:
         return ChatGoogleGenerativeAI(
@@ -195,9 +204,7 @@ class GoogleGenAIClient:
     async def generate_text(
         self, messages: list[ChatMessage], *, model: str, max_tokens: int
     ) -> tuple[str, dict[str, int]]:
-        keys = [self.api_key]
-        if self.fallback_api_key:
-            keys.append(self.fallback_api_key)
+        keys = self._all_keys()
         last_error: Exception | None = None
         for key in keys:
             try:
@@ -228,9 +235,7 @@ class GoogleGenAIClient:
     async def stream_text(
         self, messages: list[ChatMessage], *, model: str, max_tokens: int
     ) -> AsyncIterator[str]:
-        keys = [self.api_key]
-        if self.fallback_api_key:
-            keys.append(self.fallback_api_key)
+        keys = self._all_keys()
         last_error: Exception | None = None
         for key in keys:
             try:
@@ -481,6 +486,7 @@ class LLMFactory:
             return GoogleGenAIClient(
                 api_key=settings.google_api_key,
                 fallback_api_key=settings.google_api_key_fallback,
+                fallback_api_key_2=settings.google_api_key_fallback_2,
             )
         if provider == "openrouter" and settings.openrouter_api_key:
             return LangChainChatClient(
