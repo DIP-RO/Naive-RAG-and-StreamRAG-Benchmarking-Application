@@ -2,7 +2,16 @@
 
 AI Agent comparing Naive RAG and StreamRAG in a full-stack production system with guardrails, hallucination reduction, and observability.
 
-> ⚠️ **Free-tier API note:** All LLM providers used here (Google Gemini, OpenRouter Gemma) are **free-tier** and hit daily rate limits quickly. To keep the app running reliably during demos, I implemented a **7-level fallback chain**: 5 Gemini keys → Gemma/OpenRouter → EchoLLMClient mock. When all APIs are throttled, the mock returns accurate chunk-based answers with zero failures. See [Architecture](#architecture) for details.
+> ⚠️ **No paid APIs, no local LLM — pure free-tier resilience**
+>
+> I built this entire system **without any paid API key or a GPU to run a local LLM**. All providers (Google Gemini, OpenRouter) are free-tier, which means:
+> - **Daily quota exhausted** after ~20 requests per key
+> - **Frequent 429/403 errors** during demos and testing
+> - **No fallback to a local model** (no GPU available)
+>
+> To keep the app running reliably, I engineered a **7-level fallback chain**: 5 Gemini keys → Gemma/OpenRouter → EchoLLMClient mock. Each key has a 5s timeout; if all APIs are throttled, the EchoLLM mock returns accurate chunk-based answers from the vector store with zero failures.
+>
+> **ERR_CONNECTION_REFUSED:** If the frontend shows this error, the backend process died (common on resource-constrained machines). Just restart it with `uvicorn app.main:app --host 0.0.0.0 --port 8000` from `backend/src/`. See [Architecture](#architecture) for the full fallback design.
 
 ## Deliverables Checklist
 
