@@ -1,21 +1,26 @@
 "use client";
 
 import { useState } from 'react';
-import { Play, ArrowRight, Zap, Workflow, BarChart3 } from 'lucide-react';
+import { Play, ArrowRight, Zap, Workflow, BarChart3, Split } from 'lucide-react';
 import { runBenchmark, sendChat, type ChatResponse, type BenchmarkResponse } from '@/lib/api';
 
 export function BenchmarkDashboard() {
   const [prompt, setPrompt] = useState('Compare StreamRAG and naive RAG for enterprise document Q&A.');
-  const [answer, setAnswer] = useState('');
+  const [naiveAnswer, setNaiveAnswer] = useState('');
+  const [streamAnswer, setStreamAnswer] = useState('');
   const [benchmark, setBenchmark] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
   async function onRun() {
     setLoading(true);
     try {
-      const chat = (await sendChat(prompt, [])) as ChatResponse;
+      const [naiveRes, streamRes] = await Promise.all([
+        sendChat(prompt, 'naive'),
+        sendChat(prompt, 'stream'),
+      ]);
       const bench = (await runBenchmark(prompt, 3)) as BenchmarkResponse;
-      setAnswer(chat.answer);
+      setNaiveAnswer(naiveRes.answer);
+      setStreamAnswer(streamRes.answer);
       setBenchmark(JSON.stringify(bench, null, 2));
     } finally {
       setLoading(false);
@@ -72,15 +77,25 @@ export function BenchmarkDashboard() {
 
       <section id="results" className="lg:col-span-2 grid gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-          <h2 className="text-xl font-semibold text-paper">Assistant answer</h2>
+          <div className="flex items-center gap-2 text-sm uppercase tracking-[0.25em] text-blue-400">
+            <Split className="h-4 w-4" /> Naive RAG
+          </div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-white/80">
-            {answer || 'Run the benchmark to produce a grounded response here.'}
+            {naiveAnswer || 'Naive RAG response will appear here.'}
           </p>
         </div>
         <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+          <div className="flex items-center gap-2 text-sm uppercase tracking-[0.25em] text-orange-400">
+            <Zap className="h-4 w-4" /> StreamRAG
+          </div>
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-white/80">
+            {streamAnswer || 'StreamRAG response will appear here.'}
+          </p>
+        </div>
+        <div className="lg:col-span-2 rounded-3xl border border-white/10 bg-slate-950/70 p-6">
           <h2 className="text-xl font-semibold text-paper">Benchmark output</h2>
           <pre className="mt-4 overflow-auto rounded-2xl bg-black/30 p-4 text-xs leading-6 text-emerald-300">
-            {benchmark || 'Benchmark JSON will appear here.'}
+            {benchmark || 'Benchmark JSON will appear here after running comparison.'}
           </pre>
         </div>
       </section>

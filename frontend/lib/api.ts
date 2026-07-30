@@ -55,10 +55,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function sendChat(message: string, history: ChatMessage[] = []): Promise<ChatResponse> {
+export async function sendChat(message: string, mode: RagMode = 'naive', history: ChatMessage[] = []): Promise<ChatResponse> {
   return request<ChatResponse>('/chat', {
     method: 'POST',
-    body: JSON.stringify({ message, history, mode: 'naive' }),
+    body: JSON.stringify({ message, history, mode }),
   });
 }
 

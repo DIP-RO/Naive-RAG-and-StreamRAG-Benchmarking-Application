@@ -15,6 +15,17 @@
 9. "Compare StreamRAG with naive RAG"
 10. "What is 15% of 200?"
 
+## How to Reproduce
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -e .[dev]
+python scripts/run_benchmark.py
+```
+
+This will run both RAG paths against all 10 queries and output a JSON report.
+
 ## Results
 
 | Metric                  | Naive RAG         | StreamRAG         |
