@@ -265,7 +265,8 @@ class AgentOrchestrator:
             grounding_score=grounding_score,
             hallucination_rate=hallucination_rate,
             confidence_score=grounding_score,
-            flagged=result.get("output_flagged", False) or result.get("guardrail_input_blocked", False),
+            flagged=result.get("output_flagged", False)
+            or result.get("guardrail_input_blocked", False),
             guardrails=guardrails_trace,
             trace={
                 "retrieved_chunks": len(reranked),
@@ -436,7 +437,19 @@ class AgentOrchestrator:
     async def _maybe_run_tools(self, message: str) -> list[Any]:
         requested: list[tuple[ToolName, str]] = []
         lowered = message.lower()
-        has_math_kw = any(word in lowered for word in ["calculate", "compute", "plus", "minus", "times", "divided", "square root", "sqrt"])
+        has_math_kw = any(
+            word in lowered
+            for word in [
+                "calculate",
+                "compute",
+                "plus",
+                "minus",
+                "times",
+                "divided",
+                "square root",
+                "sqrt",
+            ]
+        )
         has_pct_of = bool(re.search(r"\d+\s*%\s*of\s*\d+", lowered))
         has_arith = bool(re.search(r"\d+\s*[\+\*\/%]\s*\d+", lowered))
         has_sub = bool(re.search(r"(?<!\d)\d+\s*-\s*\d+(?!\s*-?\s*\d)", lowered))

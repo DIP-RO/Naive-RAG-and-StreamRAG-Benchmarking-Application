@@ -72,7 +72,9 @@ class BenchmarkRunner:
                     for raw in events:
                         ev = json.loads(raw)
                         if ev.get("type") == "retrieval":
-                            stream_chunks = [RetrievalChunk(**c) for c in ev["payload"].get("chunks", [])]
+                            stream_chunks = [
+                                RetrievalChunk(**c) for c in ev["payload"].get("chunks", [])
+                            ]
                             break
                     citations_list.append(stream_chunks)
                 latencies.append((perf_counter() - start) * 1000.0)

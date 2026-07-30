@@ -173,28 +173,28 @@ class EchoLLMClient:
         user_message = next(
             (message.content for message in reversed(messages) if message.role == "user"), ""
         )
-        all_system = [
-            m.content for m in messages if m.role == "system"
-        ]
+        all_system = [m.content for m in messages if m.role == "system"]
         system_text = all_system[-1] if all_system else ""
-
-
 
         answer = None
         for line in system_text.split("\n"):
             line = line.strip()
             if line.startswith("[tool:") and "]" in line:
                 colon = line.index("]")
-                content = line[colon + 1:].strip()
+                content = line[colon + 1 :].strip()
                 if content:
                     answer = content
         if answer:
-            return answer, {"prompt_tokens": 0, "completion_tokens": len(answer) // 4, "total_tokens": 0}
+            return answer, {
+                "prompt_tokens": 0,
+                "completion_tokens": len(answer) // 4,
+                "total_tokens": 0,
+            }
 
         evidence_prefix = "Retrieved evidence:"
         if evidence_prefix in system_text:
             idx = system_text.index(evidence_prefix)
-            evidence = system_text[idx + len(evidence_prefix):].strip()
+            evidence = system_text[idx + len(evidence_prefix) :].strip()
             candidates = []
             for line in evidence.split("\n"):
                 line = line.strip()
@@ -206,7 +206,7 @@ class EchoLLMClient:
                 title = line[1:colon]
                 if title.startswith("skill:"):
                     continue
-                content = line[colon + 1:].strip()
+                content = line[colon + 1 :].strip()
                 if not content:
                     continue
                 qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
@@ -216,22 +216,106 @@ class EchoLLMClient:
                 tss = len(qt & tt)
                 candidates.append((cs, tss, title, content))
             if candidates:
-                _stop = {"the","a","an","is","are","was","were","be","been","being",
-                         "have","has","had","do","does","did","will","would","shall",
-                         "should","may","might","can","could","of","in","on","at",
-                         "to","for","with","by","from","up","about","into","over",
-                         "after","and","or","but","not","so","if","it","its","this",
-                         "that","these","those","i","you","he","she","we","they",
-                         "me","my","your","his","her","our","their","what","which",
-                         "who","whom","when","where","why","how","all","each","every",
-                         "both","few","more","most","some","any","no","nor","too",
-                         "very","just","also","as","than","then","now"}
+                _stop = {
+                    "the",
+                    "a",
+                    "an",
+                    "is",
+                    "are",
+                    "was",
+                    "were",
+                    "be",
+                    "been",
+                    "being",
+                    "have",
+                    "has",
+                    "had",
+                    "do",
+                    "does",
+                    "did",
+                    "will",
+                    "would",
+                    "shall",
+                    "should",
+                    "may",
+                    "might",
+                    "can",
+                    "could",
+                    "of",
+                    "in",
+                    "on",
+                    "at",
+                    "to",
+                    "for",
+                    "with",
+                    "by",
+                    "from",
+                    "up",
+                    "about",
+                    "into",
+                    "over",
+                    "after",
+                    "and",
+                    "or",
+                    "but",
+                    "not",
+                    "so",
+                    "if",
+                    "it",
+                    "its",
+                    "this",
+                    "that",
+                    "these",
+                    "those",
+                    "i",
+                    "you",
+                    "he",
+                    "she",
+                    "we",
+                    "they",
+                    "me",
+                    "my",
+                    "your",
+                    "his",
+                    "her",
+                    "our",
+                    "their",
+                    "what",
+                    "which",
+                    "who",
+                    "whom",
+                    "when",
+                    "where",
+                    "why",
+                    "how",
+                    "all",
+                    "each",
+                    "every",
+                    "both",
+                    "few",
+                    "more",
+                    "most",
+                    "some",
+                    "any",
+                    "no",
+                    "nor",
+                    "too",
+                    "very",
+                    "just",
+                    "also",
+                    "as",
+                    "than",
+                    "then",
+                    "now",
+                }
                 qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
                 meaningful = qt - _stop
                 if meaningful:
                     scored: list[tuple[int, str, str]] = []
                     for _, _, cand_title, cand_content in candidates:
-                        ct = {t.strip("?,.;:!\"'()[]{}-") for t in cand_content.lower().split()} - {""}
+                        ct = {t.strip("?,.;:!\"'()[]{}-") for t in cand_content.lower().split()} - {
+                            ""
+                        }
                         tt = {w for w in _re.split(r"[^a-z0-9]+", cand_title.lower()) if w}
                         exact_matched = meaningful & ct
                         title_matched = meaningful & tt
@@ -262,10 +346,19 @@ class EchoLLMClient:
 
         if not answer:
             topics = [
-                "machine learning", "deep learning architectures", "RAG techniques",
-                "company overview (Next Ventures)", "climate change", "weather",
-                "renewable energy", "database systems", "cybersecurity", "AI ethics",
-                "calculator", "date/time", "weather forecasts",
+                "machine learning",
+                "deep learning architectures",
+                "RAG techniques",
+                "company overview (Next Ventures)",
+                "climate change",
+                "weather",
+                "renewable energy",
+                "database systems",
+                "cybersecurity",
+                "AI ethics",
+                "calculator",
+                "date/time",
+                "weather forecasts",
             ]
             answer = (
                 "I don't have information about that in my current knowledge base. "
