@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -43,7 +44,7 @@ class AgentOrchestrator:
     async def answer(self, request: ChatRequest) -> ChatResponse:
         request_id = str(uuid4())
         conversation_id = request.conversation_id or str(uuid4())
-        started = asyncio.get_running_loop().time()
+        started = perf_counter()
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
@@ -53,7 +54,7 @@ class AgentOrchestrator:
         retrieved_chunks = await self.deps.vector_store.search(request.message, limit=self.deps.settings.naive_top_k)
         reranked = self.deps.reranker.rerank(request.message, retrieved_chunks)
         context_text = self._build_context_text(reranked, tool_results, skill_results)
-        summary = (await self.deps.conversation_store.get_summary(conversation_id))
+        summary = await self.deps.conversation_store.get_summary(conversation_id)
         prompt_messages = self.deps.context_manager.build_prompt_messages(
             history=history,
             summary=summary.summary if summary else None,
@@ -73,23 +74,23 @@ class AgentOrchestrator:
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="assistant", content=answer_text))
         if count_tokens(context_text) > 2_000:
             await self.deps.conversation_store.store_summary(conversation_id, self._summarize_locally(history, request.message, answer_text))
-        latency_ms = (asyncio.get_running_loop().time() - started) * 1000.0
+        latency_ms = (perf_counter() - started) * 1000.0
         return ChatResponse(
             conversation_id=conversation_id,
             mode=request.mode,
             answer=answer_text,
             citations=reranked,
-            tool_calls=[result.metadata | {"tool": result.name.value, "output": result.output} for result in tool_results] + [{"skill": r.name, "output": r.output} for r in skill_results],
+            tool_calls=self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results],
             usage=usage,
             latency_ms=latency_ms,
             request_id=request_id,
-            trace={"retrieved_chunks": len(reranked), "tools": [result.name.value for result in tool_results], "skills": [r.name for r in skill_results]},
+            trace={"retrieved_chunks": len(reranked), "tools": [r.name.value for r in tool_results if not isinstance(r, Exception)], "skills": [r.name for r in skill_results]},
         )
 
     async def stream_answer(self, request: ChatRequest) -> AsyncIterator[str]:
         request_id = str(uuid4())
         conversation_id = request.conversation_id or str(uuid4())
-        started = asyncio.get_running_loop().time()
+        started = perf_counter()
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
@@ -100,12 +101,26 @@ class AgentOrchestrator:
         tool_task = asyncio.create_task(self._maybe_run_tools(request.message))
         skill_task = asyncio.create_task(self.deps.skills.run_matching(request.message, context={}))
 
-        initial_chunks = await initial_task
-        initial_reranked = self.deps.reranker.rerank(request.message, initial_chunks)
-        tool_results = await tool_task
-        skill_results = await skill_task
+        try:
+            initial_chunks = await initial_task
+            initial_reranked = self.deps.reranker.rerank(request.message, initial_chunks)
+        except Exception as exc:  # noqa: BLE001
+            yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"error": f"Retrieval failed: {exc}"}).model_dump_json()
+            return
+
+        try:
+            tool_results = await tool_task
+        except Exception as exc:  # noqa: BLE001
+            tool_results = []
+            yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"warning": f"Tool execution failed: {exc}"}).model_dump_json()
+
+        try:
+            skill_results = await skill_task
+        except Exception:  # noqa: BLE001
+            skill_results = []
+
         initial_context = self._build_context_text(initial_reranked, tool_results, skill_results)
-        summary = (await self.deps.conversation_store.get_summary(conversation_id))
+        summary = await self.deps.conversation_store.get_summary(conversation_id)
         prompt_messages = self.deps.context_manager.build_prompt_messages(
             history=history,
             summary=summary.summary if summary else None,
@@ -125,32 +140,39 @@ class AgentOrchestrator:
         ).model_dump_json()
 
         answer_parts: list[str] = []
-        async for delta in self.deps.llm.stream_text(
-            prompt_messages,
-            model=request.model or self.deps.settings.default_llm_model,
-            max_tokens=self.deps.settings.max_output_tokens,
-        ):
-            answer_parts.append(delta)
-            yield StreamEvent(type="delta", conversation_id=conversation_id, request_id=request_id, payload={"text": delta}).model_dump_json()
+        try:
+            async for delta in self.deps.llm.stream_text(
+                prompt_messages,
+                model=request.model or self.deps.settings.default_llm_model,
+                max_tokens=self.deps.settings.max_output_tokens,
+            ):
+                answer_parts.append(delta)
+                yield StreamEvent(type="delta", conversation_id=conversation_id, request_id=request_id, payload={"text": delta}).model_dump_json()
+        except Exception as exc:  # noqa: BLE001
+            yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"error": f"Generation failed: {exc}"}).model_dump_json()
+            return
 
-        broad_chunks = await broad_task
-        broad_reranked = self.deps.reranker.rerank(request.message, broad_chunks)
-        if len(broad_reranked) > len(initial_reranked):
-            yield StreamEvent(
-                type="context_update",
-                conversation_id=conversation_id,
-                request_id=request_id,
-                payload={"new_chunks": [chunk.model_dump() for chunk in broad_reranked[len(initial_reranked):]]},
-            ).model_dump_json()
+        try:
+            broad_chunks = await broad_task
+            broad_reranked = self.deps.reranker.rerank(request.message, broad_chunks)
+            if len(broad_reranked) > len(initial_reranked):
+                yield StreamEvent(
+                    type="context_update",
+                    conversation_id=conversation_id,
+                    request_id=request_id,
+                    payload={"new_chunks": [chunk.model_dump() for chunk in broad_reranked[len(initial_reranked):]]},
+                ).model_dump_json()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
         final_answer = "".join(answer_parts).strip()
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="assistant", content=final_answer))
-        latency_ms = (asyncio.get_running_loop().time() - started) * 1000.0
+        latency_ms = (perf_counter() - started) * 1000.0
         yield StreamEvent(
             type="completed",
             conversation_id=conversation_id,
             request_id=request_id,
-            payload={"answer": final_answer, "latency_ms": latency_ms, "tool_calls": [result.metadata | {"tool": result.name.value, "output": result.output} for result in tool_results] + [{"skill": r.name, "output": r.output} for r in skill_results]},
+            payload={"answer": final_answer, "latency_ms": latency_ms, "tool_calls": self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results]},
         ).model_dump_json()
 
     async def _maybe_run_tools(self, message: str) -> list[Any]:
@@ -178,6 +200,10 @@ class AgentOrchestrator:
             for result in skill_results:
                 parts.append(f"[skill:{result.name}] {result.output}")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _fmt_tool_results(results: list[Any]) -> list[dict[str, Any]]:
+        return [r.metadata | {"tool": r.name.value, "output": r.output} for r in results if not isinstance(r, Exception)]
 
     def _summarize_locally(self, history: list[ChatMessage], user_message: str, answer: str) -> str:
         recent = history[-6:]

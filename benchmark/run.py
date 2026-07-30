@@ -26,6 +26,26 @@ def load_test_set() -> list[dict]:
         return json.load(f)
 
 
+def parse_sse_response(text: str) -> tuple[str, float]:
+    answer = ""
+    latency_ms = 0.0
+    for line in text.splitlines():
+        if not line.startswith("data: "):
+            continue
+        data_str = line.removeprefix("data: ")
+        try:
+            event = json.loads(data_str)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "delta":
+            answer += event.get("payload", {}).get("text", "")
+        elif event.get("type") == "completed":
+            payload = event.get("payload", {})
+            answer = payload.get("answer", answer)
+            latency_ms = payload.get("latency_ms", 0.0)
+    return answer, latency_ms
+
+
 def run_benchmark() -> dict:
     test_set = load_test_set()
     queries = [item["query"] for item in test_set]
@@ -36,19 +56,35 @@ def run_benchmark() -> dict:
         qid = item["id"]
         query = item["query"]
         for mode in ("naive", "stream"):
-            resp = client.post("/chat", json={"message": query, "mode": mode})
+            endpoint = "/chat/stream" if mode == "stream" else "/chat"
+            resp = client.post(
+                endpoint,
+                json={"message": query, "mode": mode},
+                timeout=120.0,
+            )
             if resp.status_code != 200:
                 results[mode][qid] = {"error": resp.text, "query": query}
                 continue
-            data = resp.json()
-            results[mode][qid] = {
-                "query": query,
-                "expected": item["expected_answer"],
-                "answer": data["answer"],
-                "latency_ms": data["latency_ms"],
-                "usage": data["usage"],
-                "tool_calls": data.get("tool_calls", []),
-            }
+            if mode == "stream":
+                answer, latency_ms = parse_sse_response(resp.text)
+                results[mode][qid] = {
+                    "query": query,
+                    "expected": item["expected_answer"],
+                    "answer": answer,
+                    "latency_ms": latency_ms,
+                    "usage": {},
+                    "tool_calls": [],
+                }
+            else:
+                data = resp.json()
+                results[mode][qid] = {
+                    "query": query,
+                    "expected": item["expected_answer"],
+                    "answer": data["answer"],
+                    "latency_ms": data["latency_ms"],
+                    "usage": data["usage"],
+                    "tool_calls": data.get("tool_calls", []),
+                }
 
     summary = {}
     for mode in ("naive", "stream"):

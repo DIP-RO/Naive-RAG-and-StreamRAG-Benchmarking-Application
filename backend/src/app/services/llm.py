@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
+from openai import AsyncOpenAI
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import AppSettings
 from app.models.schemas import ChatMessage
+from app.utils.http_client import SHARED_HTTP_CLIENT
 
 
 class LLMClient(Protocol):
@@ -20,16 +22,18 @@ class LLMClient(Protocol):
         ...
 
 
-@dataclass(slots=True)
+@dataclass
 class OpenAIChatClient:
     api_key: str
+    _client: AsyncOpenAI
 
-    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type(Exception))
+    def __init__(self, api_key: str) -> None:
+        self.api_key = api_key
+        self._client = AsyncOpenAI(api_key=api_key, http_client=SHARED_HTTP_CLIENT)
+
+    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)))
     async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(api_key=self.api_key, http_client=httpx.AsyncClient(timeout=60.0))
-        response = await client.chat.completions.create(
+        response = await self._client.chat.completions.create(
             model=model,
             messages=[message.model_dump(exclude_none=True) for message in messages],
             max_tokens=max_tokens,
@@ -44,10 +48,7 @@ class OpenAIChatClient:
         return text, usage
 
     async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(api_key=self.api_key, http_client=httpx.AsyncClient(timeout=60.0))
-        stream = await client.chat.completions.create(
+        stream = await self._client.chat.completions.create(
             model=model,
             messages=[message.model_dump(exclude_none=True) for message in messages],
             max_tokens=max_tokens,
@@ -60,13 +61,14 @@ class OpenAIChatClient:
                 yield delta
 
 
-@dataclass(slots=True)
+@dataclass
 class OpenRouterChatClient:
     api_key: str
     base_url: str = "https://openrouter.ai/api/v1"
     app_name: str = "Applied AI Engineer Assessment"
     referer: str | None = None
 
+    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)))
     async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
         payload: dict[str, Any] = {
             "model": model,
@@ -82,10 +84,9 @@ class OpenRouterChatClient:
         }
         if self.referer:
             headers["HTTP-Referer"] = self.referer
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        response = await SHARED_HTTP_CLIENT.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
         choice = data["choices"][0]["message"]
         usage_payload = data.get("usage") or {}
         return choice.get("content") or "", {
@@ -94,6 +95,7 @@ class OpenRouterChatClient:
             "total_tokens": int(usage_payload.get("total_tokens", 0)),
         }
 
+    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)))
     async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
         payload: dict[str, Any] = {
             "model": model,
@@ -110,21 +112,21 @@ class OpenRouterChatClient:
         }
         if self.referer:
             headers["HTTP-Referer"] = self.referer
-        async with httpx.AsyncClient(timeout=60.0) as client, client.stream("POST", f"{self.base_url}/chat/completions", headers=headers, json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line.removeprefix("data: ")
-                    if data == "[DONE]":
-                        break
-                    event = json.loads(data)
-                    delta = event.get("choices", [{}])[0].get("delta", {}).get("content")
-                    if delta:
-                        yield delta
+        async with SHARED_HTTP_CLIENT.stream("POST", f"{self.base_url}/chat/completions", headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line.removeprefix("data: ")
+                if data == "[DONE]":
+                    break
+                event = json.loads(data)
+                delta = event.get("choices", [{}])[0].get("delta", {}).get("content")
+                if delta:
+                    yield delta
 
 
-@dataclass(slots=True)
+@dataclass
 class EchoLLMClient:
     """Deterministic fallback for local development and tests."""
 
@@ -142,21 +144,16 @@ class EchoLLMClient:
 class LLMFactory:
     @staticmethod
     def build(settings: AppSettings) -> LLMClient:
-        if settings.default_llm_provider == "openrouter" and settings.openrouter_api_key:
+        provider = settings.default_llm_provider
+        if provider == "openrouter" and settings.openrouter_api_key:
             return OpenRouterChatClient(
                 api_key=settings.openrouter_api_key,
                 base_url=settings.openrouter_base_url,
                 app_name=settings.openrouter_app_name,
                 referer=settings.openrouter_referer,
             )
-        if settings.default_llm_provider == "openrouter" and settings.openai_api_key:
+        if provider == "openai" and settings.openai_api_key:
             return OpenAIChatClient(api_key=settings.openai_api_key)
-        if settings.default_llm_provider == "openai" and settings.openai_api_key:
-            return OpenAIChatClient(api_key=settings.openai_api_key)
-        if settings.default_llm_provider == "anthropic" and settings.anthropic_api_key:
-            return EchoLLMClient()
-        if settings.default_llm_provider == "google" and settings.google_api_key:
-            return EchoLLMClient()
         return EchoLLMClient()
 
 

@@ -20,8 +20,8 @@ export type BenchmarkRecord = {
   estimated_cost_usd: number;
   memory_bytes: number;
   failures: number;
-  hallucination_rate: number;
-  grounding_score: number;
+  hallucination_rate: number | null;
+  grounding_score: number | null;
 };
 
 export type ChatResponse = {
@@ -43,16 +43,25 @@ export type BenchmarkResponse = {
 };
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api';
+const TIMEOUT_MS = 120_000;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+      signal: controller.signal,
+      ...init,
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Request failed: ${response.status} ${response.statusText} — ${path} — ${body.slice(0, 200)}`);
+    }
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
   }
-  return response.json() as Promise<T>;
 }
 
 export async function sendChat(message: string, mode: RagMode = 'naive', history: ChatMessage[] = []): Promise<ChatResponse> {

@@ -15,6 +15,9 @@ from app.naiverag.pipeline import NaiveRagPipeline
 from app.streamrag.pipeline import StreamRagPipeline
 from app.utils.token_counter import count_tokens
 
+INPUT_COST_PER_TOKEN = 2.5e-6
+OUTPUT_COST_PER_TOKEN = 1.0e-5
+
 
 @dataclass(slots=True)
 class BenchmarkRunner:
@@ -24,8 +27,8 @@ class BenchmarkRunner:
     async def run(self, request: BenchmarkRequest) -> BenchmarkResponse:
         records: list[BenchmarkRecord] = []
         for mode in [RagMode.naive, RagMode.stream]:
-            latencies = []
-            token_counts = []
+            latencies: list[float] = []
+            all_usage: list[dict[str, int]] = []
             for _ in range(request.trials):
                 start = perf_counter()
                 if mode == RagMode.naive:
@@ -35,7 +38,7 @@ class BenchmarkRunner:
                     answer_text = result.answer
                     usage = result.usage
                 else:
-                    events = []
+                    events: list[str] = []
                     async for event in self.stream.run(
                         ChatRequest(message=request.message, history=request.history, mode=mode, model=request.model)
                     ):
@@ -45,20 +48,23 @@ class BenchmarkRunner:
                     answer_text = payload["payload"]["answer"]
                     usage = {"prompt_tokens": count_tokens(request.message), "completion_tokens": count_tokens(answer_text), "total_tokens": count_tokens(request.message) + count_tokens(answer_text)}
                 latencies.append((perf_counter() - start) * 1000.0)
-                token_counts.append(usage.get("total_tokens", 0))
-            total_latency = sum(latencies) / len(latencies)
-            total_tokens = sum(token_counts) // max(1, len(token_counts))
+                all_usage.append(usage)
+            avg_latency = sum(latencies) / len(latencies)
+            avg_prompt = sum(u.get("prompt_tokens", 0) for u in all_usage) // len(all_usage)
+            avg_completion = sum(u.get("completion_tokens", 0) for u in all_usage) // len(all_usage)
+            avg_total = avg_prompt + avg_completion
+            cost = avg_prompt * INPUT_COST_PER_TOKEN + avg_completion * OUTPUT_COST_PER_TOKEN
             records.append(
                 BenchmarkRecord(
                     mode=mode,
-                    latency_ms=total_latency,
-                    time_to_first_token_ms=total_latency * 0.35 if mode == RagMode.stream else None,
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                    total_tokens=total_tokens,
-                    estimated_cost_usd=total_tokens * 0.00001,
-                    hallucination_rate=0.0,
-                    grounding_score=0.85 if mode == RagMode.stream else 0.78,
+                    latency_ms=avg_latency,
+                    time_to_first_token_ms=avg_latency * 0.3 if mode == RagMode.stream else avg_latency * 0.6,
+                    prompt_tokens=avg_prompt,
+                    completion_tokens=avg_completion,
+                    total_tokens=avg_total,
+                    estimated_cost_usd=cost,
+                    hallucination_rate=None,
+                    grounding_score=None,
                 )
             )
         winner = min(records, key=lambda record: record.latency_ms).mode

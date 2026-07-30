@@ -4,7 +4,9 @@ import hashlib
 from dataclasses import dataclass
 from typing import Protocol
 
-import httpx
+from openai import AsyncOpenAI
+
+from app.utils.http_client import SHARED_HTTP_CLIENT
 
 
 class EmbeddingProvider(Protocol):
@@ -12,18 +14,25 @@ class EmbeddingProvider(Protocol):
         ...
 
 
-@dataclass(slots=True)
+@dataclass
 class OpenAIEmbeddingProvider:
     api_key: str
     model: str = "text-embedding-3-small"
     dimensions: int = 1536
+    _client: AsyncOpenAI | None = None
+
+    def __post_init__(self) -> None:
+        self._client = AsyncOpenAI(api_key=self.api_key, http_client=SHARED_HTTP_CLIENT)
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(api_key=self.api_key, http_client=httpx.AsyncClient(timeout=30.0))
-        response = await client.embeddings.create(model=self.model, input=texts)
-        return [item.embedding for item in response.data]
+        assert self._client is not None
+        BATCH_SIZE = 500
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch = texts[i : i + BATCH_SIZE]
+            response = await self._client.embeddings.create(model=self.model, input=batch)
+            all_embeddings.extend(item.embedding for item in response.data)
+        return all_embeddings
 
 
 class DeterministicEmbeddingProvider:

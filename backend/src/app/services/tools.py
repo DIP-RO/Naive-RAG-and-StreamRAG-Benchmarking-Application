@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -37,9 +36,14 @@ class CalculatorTool:
 
     @staticmethod
     def _extract_expression(text: str) -> str:
-        match = re.search(r"[-+]?\d+\s*[\+\-\*/]\s*\d+(?:\s*[\+\-\*/]\s*\d+)*", text)
+        percentage_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+        if percentage_match:
+            val, total = float(percentage_match.group(1)), float(percentage_match.group(2))
+            return f"{val}*{total}/100"
+        match = re.search(r"[-+]?\d+(?:\.\d+)?\s*[\+\-\*/%]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*/%]\s*\d+(?:\.\d+)?)*", text)
         if match:
-            return match.group(0)
+            expr = match.group(0).replace("%", "/100*")
+            return expr
         return text
 
     def _safe_eval(self, expression: str) -> float:
@@ -59,9 +63,13 @@ class CalculatorTool:
             if isinstance(node.op, ast.Mult):
                 return left * right
             if isinstance(node.op, ast.Div):
+                if right == 0:
+                    raise ValueError("Division by zero")
                 return left / right
             if isinstance(node.op, ast.Pow):
                 return left**right
+            if isinstance(node.op, ast.Mod):
+                return left % right
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
             return -self._eval_node(node.operand)
         raise ValueError("Unsupported expression")
@@ -141,6 +149,11 @@ class ToolRegistry:
         return await tool.execute(query=query, context=context or {})
 
     async def run_many(self, requests: list[tuple[ToolName, str]], context: dict[str, Any] | None = None) -> list[ToolResult]:
-        async with asyncio.TaskGroup() as group:
-            tasks = [group.create_task(self.run(name, query, context=context)) for name, query in requests]
-        return [task.result() for task in tasks]
+        results: list[ToolResult] = []
+        for name, query in requests:
+            try:
+                result = await self.run(name, query, context=context)
+                results.append(result)
+            except Exception as exc:  # noqa: BLE001
+                results.append(ToolResult(name=name, output=f"Error: {exc}", metadata={"error": str(exc)}))
+        return results
