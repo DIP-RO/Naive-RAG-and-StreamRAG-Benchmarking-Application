@@ -31,6 +31,7 @@ class AppSettings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     google_api_key: str | None = None
+    google_api_key_fallback: str | None = None
     openrouter_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices(

@@ -164,9 +164,10 @@ class OpenRouterClient:
 
 @dataclass
 class GoogleGenAIClient:
-    """LangChain-based client for Google Gemini models."""
+    """LangChain-based client for Google Gemini models with fallback key."""
 
     api_key: str
+    fallback_api_key: str | None = None
     default_model: str = "gemini-flash-latest"
 
     def _build_llm(self, model: str, max_tokens: int) -> ChatGoogleGenerativeAI:
@@ -177,29 +178,41 @@ class GoogleGenAIClient:
             max_output_tokens=max_tokens,
         )
 
-    async def generate_text(
-        self, messages: list[ChatMessage], *, model: str, max_tokens: int
-    ) -> tuple[str, dict[str, int]]:
-        llm = self._build_llm(model, max_tokens)
+    async def _try_generate(
+        self, api_key: str, messages: list[ChatMessage], model: str, max_tokens: int
+    ) -> str:
+        llm = ChatGoogleGenerativeAI(
+            api_key=api_key, model=model, temperature=0.2, max_output_tokens=max_tokens
+        )
         lc_messages = _to_langchain(messages)
         response = await llm.ainvoke(lc_messages)
         if isinstance(response.content, str):
-            text = response.content
-        elif isinstance(response.content, list):
-            parts = [p.get("text", "") for p in response.content if isinstance(p, dict)]
-            text = " ".join(parts)
-        else:
-            text = ""
-        return text, {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
+            return response.content
+        if isinstance(response.content, list):
+            return " ".join(p.get("text", "") for p in response.content if isinstance(p, dict))
+        return ""
 
-    async def stream_text(
+    async def generate_text(
         self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> tuple[str, dict[str, int]]:
+        keys = [self.api_key]
+        if self.fallback_api_key:
+            keys.append(self.fallback_api_key)
+        last_error: Exception | None = None
+        for key in keys:
+            try:
+                text = await self._try_generate(key, messages, model, max_tokens)
+                return text, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+        raise last_error  # type: ignore[misc]
+
+    async def _try_stream(
+        self, api_key: str, messages: list[ChatMessage], model: str, max_tokens: int
     ) -> AsyncIterator[str]:
-        llm = self._build_llm(model, max_tokens)
+        llm = ChatGoogleGenerativeAI(
+            api_key=api_key, model=model, temperature=0.2, max_output_tokens=max_tokens
+        )
         lc_messages = _to_langchain(messages)
         async for chunk in llm.astream(lc_messages):
             if isinstance(chunk.content, str):
@@ -211,6 +224,22 @@ class GoogleGenAIClient:
                 text = ""
             if text:
                 yield text
+
+    async def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]:
+        keys = [self.api_key]
+        if self.fallback_api_key:
+            keys.append(self.fallback_api_key)
+        last_error: Exception | None = None
+        for key in keys:
+            try:
+                async for text in self._try_stream(key, messages, model, max_tokens):
+                    yield text
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+        raise last_error  # type: ignore[misc]
 
 
 @dataclass
@@ -449,7 +478,10 @@ class LLMFactory:
     def build(settings: AppSettings) -> LLMClient:
         provider = settings.default_llm_provider
         if provider == "google" and settings.google_api_key:
-            return GoogleGenAIClient(api_key=settings.google_api_key)
+            return GoogleGenAIClient(
+                api_key=settings.google_api_key,
+                fallback_api_key=settings.google_api_key_fallback,
+            )
         if provider == "openrouter" and settings.openrouter_api_key:
             return LangChainChatClient(
                 api_key=settings.openrouter_api_key,
