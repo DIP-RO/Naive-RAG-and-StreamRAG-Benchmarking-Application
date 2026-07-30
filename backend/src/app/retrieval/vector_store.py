@@ -67,15 +67,15 @@ class QdrantVectorStore(VectorStoreProtocol):
 
     async def search(self, query: str, limit: int = 5) -> list[RetrievalChunk]:
         query_vector = (await self.embeddings.embed_texts([query]))[0]
-        results = await self.client.search(
+        response = await self.client.query_points(
             collection_name=self.collection,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit,
             with_payload=True,
             score_threshold=None,
         )
         chunks: list[RetrievalChunk] = []
-        for result in results:
+        for result in response.points:
             payload = result.payload or {}
             chunks.append(
                 RetrievalChunk(

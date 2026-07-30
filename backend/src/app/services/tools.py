@@ -9,6 +9,8 @@ from typing import Any, Protocol
 
 import httpx
 
+import re
+
 from app.models.schemas import ToolName
 
 
@@ -30,8 +32,16 @@ class CalculatorTool:
     name = ToolName.calculator
 
     async def execute(self, *, query: str, context: dict[str, Any]) -> ToolResult:
-        value = self._safe_eval(query)
-        return ToolResult(name=self.name, output=str(value), metadata={"expression": query})
+        expression = self._extract_expression(query)
+        value = self._safe_eval(expression)
+        return ToolResult(name=self.name, output=str(value), metadata={"expression": expression})
+
+    @staticmethod
+    def _extract_expression(text: str) -> str:
+        match = re.search(r"[-+]?\d+\s*[\+\-\*/]\s*\d+(?:\s*[\+\-\*/]\s*\d+)*", text)
+        if match:
+            return match.group(0)
+        return text
 
     def _safe_eval(self, expression: str) -> float:
         node = ast.parse(expression, mode="eval")
