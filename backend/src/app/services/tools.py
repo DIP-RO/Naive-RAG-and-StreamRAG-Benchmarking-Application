@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import httpx
-
-import re
 
 from app.models.schemas import ToolName
 
