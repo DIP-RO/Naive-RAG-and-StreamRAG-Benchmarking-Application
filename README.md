@@ -24,6 +24,20 @@ AI Agent comparing Naive RAG and StreamRAG in a full-stack production system wit
 - [x] **Benchmark report**: `BENCHMARK.md`
 - [ ] **Video**: 5-min walkthrough (intro, architecture, demo, tradeoffs)
 
+## Screenshots
+
+### Side-by-Side RAG Comparison
+
+![RAG Comparison](images/Screenshot%202026-07-30%20at%2017.51.02.png)
+
+*Naive RAG vs StreamRAG side-by-side with benchmark metrics (latency, grounding, tokens, cost)*
+
+### Benchmark Dashboard
+
+![Benchmark Dashboard](images/Screenshot%202026-07-30%20at%2018.52.58.png)
+
+*Full benchmark run showing all 22 queries with category breakdown and per-mode latency comparison*
+
 ## Architecture
 
 ### System Flow
