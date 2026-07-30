@@ -175,13 +175,24 @@ class AgentOrchestrator:
                 max_tokens=self.deps.settings.max_output_tokens,
             )
         except Exception:  # noqa: BLE001
-            from app.services.llm import EchoLLMClient
+            from app.services.llm import EchoLLMClient, LangChainChatClient
 
-            answer_text, usage = await EchoLLMClient().generate_text(
-                state["prompt_messages"],
-                model=request.model or self.deps.settings.default_llm_model,
-                max_tokens=self.deps.settings.max_output_tokens,
-            )
+            try:
+                gemma_client = LangChainChatClient(
+                    api_key=self.deps.settings.openrouter_api_key or "",
+                    base_url=self.deps.settings.openrouter_base_url.rstrip("/"),
+                )
+                answer_text, usage = await gemma_client.generate_text(
+                    state["prompt_messages"],
+                    model="google/gemma-4-31b-it:free",
+                    max_tokens=self.deps.settings.max_output_tokens,
+                )
+            except Exception:  # noqa: BLE001
+                answer_text, usage = await EchoLLMClient().generate_text(
+                    state["prompt_messages"],
+                    model=request.model or self.deps.settings.default_llm_model,
+                    max_tokens=self.deps.settings.max_output_tokens,
+                )
         guardrail_result = self.deps.guardrails.check_output(answer_text)
         citation_result = self.deps.guardrails.compute_grounding(answer_text, state["reranked"])
         await self.deps.conversation_store.append(
@@ -393,21 +404,39 @@ class AgentOrchestrator:
                     payload={"text": delta},
                 ).model_dump_json()
         except Exception:  # noqa: BLE001
-            from app.services.llm import EchoLLMClient
+            from app.services.llm import EchoLLMClient, LangChainChatClient
 
-            fallback = EchoLLMClient()
-            async for delta in fallback.stream_text(
-                prompt_messages,
-                model=request.model or self.deps.settings.default_llm_model,
-                max_tokens=self.deps.settings.max_output_tokens,
-            ):
-                answer_parts.append(delta)
-                yield StreamEvent(
-                    type="delta",
-                    conversation_id=conversation_id,
-                    request_id=request_id,
-                    payload={"text": delta},
-                ).model_dump_json()
+            try:
+                gemma_stream = LangChainChatClient(
+                    api_key=self.deps.settings.openrouter_api_key or "",
+                    base_url=self.deps.settings.openrouter_base_url.rstrip("/"),
+                )
+                async for delta in gemma_stream.stream_text(
+                    prompt_messages,
+                    model="google/gemma-4-31b-it:free",
+                    max_tokens=self.deps.settings.max_output_tokens,
+                ):
+                    answer_parts.append(delta)
+                    yield StreamEvent(
+                        type="delta",
+                        conversation_id=conversation_id,
+                        request_id=request_id,
+                        payload={"text": delta},
+                    ).model_dump_json()
+            except Exception:  # noqa: BLE001
+                fallback = EchoLLMClient()
+                async for delta in fallback.stream_text(
+                    prompt_messages,
+                    model=request.model or self.deps.settings.default_llm_model,
+                    max_tokens=self.deps.settings.max_output_tokens,
+                ):
+                    answer_parts.append(delta)
+                    yield StreamEvent(
+                        type="delta",
+                        conversation_id=conversation_id,
+                        request_id=request_id,
+                        payload={"text": delta},
+                    ).model_dump_json()
             return
 
         broad_chunks: list[RetrievalChunk] = []

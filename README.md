@@ -105,9 +105,11 @@ flowchart TB
         MemStore["InMemoryStore<br/>(test)"]
     end
 
-    subgraph LLM["LLM Providers"]
-        LC["LangChainChatClient<br/>(ChatOpenAI)"]
-        OR["OpenRouterClient<br/>(httpx)"]
+    subgraph LLM["LLM Fallback Chain"]
+        GC["GoogleGenAIClient<br/>(Gemini key 1)"]
+        GF1["GoogleGenAIClient<br/>(Gemini key 2)"]
+        GF2["GoogleGenAIClient<br/>(Gemini key 3)"]
+        GR["LangChainChatClient<br/>(Gemma/OpenRouter)"]
         Echo["EchoLLMClient<br/>(mock)"]
     end
 
@@ -118,9 +120,15 @@ flowchart TB
     Retrieve --> Rel
     Gen --> Cite
     Gen --> Safety
-    Gen --> OR
-    Gen --> LC
+    Gen --> GC
+    Gen --> GF1
+    Gen --> GF2
+    Gen --> GR
     Gen --> Echo
+    GC -. rate limit .-> GF1
+    GF1 -. rate limit .-> GF2
+    GF2 -. rate limit .-> GR
+    GR -. rate limit .-> Echo
     Ctx --> SQL
     Retrieve --> Qdrant
     Retrieve --> MemStore
@@ -139,7 +147,7 @@ flowchart TB
     class Agent,Init,Retrieve,Tools,Skills,Ctx,Gen agent
     class Guard,Safety,PII,Cite,Rel guard
     class Storage,SQL,Qdrant,MemStore storage
-    class LLM,LC,OR,Echo llm
+    class LLM,GC,GF1,GF2,GR,Echo llm
 ```
 
 ### Frontend Architecture
@@ -191,7 +199,7 @@ graph TB
 | Frontend | Next.js 14, React 18, Tailwind CSS |
 | Vector DB | Qdrant (with in-memory fallback for tests) |
 | Memory | SQLite via aiosqlite |
-| LLM | OpenAI / OpenRouter (with EchoLLMClient fallback) |
+| LLM | Google Gemini (3 API keys) → Gemma/OpenRouter → EchoLLMClient (5-level fallback chain) |
 | Guardrails | Content safety, PII redaction, prompt injection detection |
 | Hallucination Reduction | Citation verifier, relevance threshold, confidence scoring |
 | Packaging | Docker Compose (backend + frontend + Qdrant) |
@@ -341,6 +349,7 @@ python benchmark/run.py
 
 ## Limitations
 
+- **Free-tier Gemini rate limits**: The 3 Google API keys and Gemma/OpenRouter fallback mitigate this, but heavy usage may still hit the EchoLLM mock
 - **Small document set**: 10 example documents; not representative of production-scale knowledge bases
 - **No authentication**: API is open; add API key middleware for production
 - **Simple tool routing**: Heuristic keyword matching instead of model-mediated function calling
