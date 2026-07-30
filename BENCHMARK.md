@@ -39,13 +39,13 @@ Requires the backend server running at `http://localhost:8000`.
 
 ## LLM Fallback Chain
 
-The system uses a **5-level fallback chain** to maximize uptime:
+The system uses a **6-level fallback chain** to maximize uptime:
 
 ```
-Google Gemini (key 1) → Gemini (key 2) → Gemini (key 3) → Gemma/OpenRouter → EchoLLMClient (mock)
+Gemini (key 1) → Gemini (key 2) → Gemini (key 3) → Gemini (key 4) → Gemma/OpenRouter → EchoLLMClient (mock)
 ```
 
-If the primary Gemini key hits a rate limit, it transparently retries with the next key. If all 3 Gemini keys fail, it falls back to Gemma via OpenRouter. If that also fails, the deterministic EchoLLMClient mock returns the best keyword-matched chunk.
+If the primary Gemini key hits a rate limit, it transparently retries with the next key. If all 4 Gemini keys fail, it falls back to Gemma (google/gemma-4-31b-it:free) via OpenRouter. If that also fails, the deterministic EchoLLMClient mock returns the best keyword-matched chunk or a no-data message.
 
 ## Results (Gemini + Fallback — 22 queries × 2 modes)
 
@@ -110,7 +110,7 @@ All 22 queries return the expected answer or fallback. Key improvements:
 
 ## Notes
 
-- **Gemini fallback chain**: The 5-level fallback (Gemini×3 → Gemma → EchoLLM) ensures zero failures even when free-tier API rate limits are hit. Each level retries transparently with exponential backoff within the GoogleGenAIClient.
+- **Gemini fallback chain**: The 6-level fallback (Gemini×4 → Gemma → EchoLLM) ensures zero failures even when free-tier API rate limits are hit. Each level retries transparently within the GoogleGenAIClient.
 - **EchoLLM mock**: The final fallback is the deterministic `EchoLLMClient` which returns the best keyword-overlapping chunk or a no-data fallback. This guarantees the system always returns a coherent response.
 - **Hash-based embedding**: Vector search uses a deterministic hash for reproducibility. This means semantic retrieval quality is limited — chunks are matched by keyword overlap after a randomized hash ranking.
 - **Benchmark command**: Run `python benchmark/run.py` from the `benchmark/` directory with the backend server running.

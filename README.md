@@ -105,11 +105,12 @@ flowchart TB
         MemStore["InMemoryStore<br/>(test)"]
     end
 
-    subgraph LLM["LLM Fallback Chain"]
-        GC["GoogleGenAIClient<br/>(Gemini key 1)"]
-        GF1["GoogleGenAIClient<br/>(Gemini key 2)"]
-        GF2["GoogleGenAIClient<br/>(Gemini key 3)"]
-        GR["LangChainChatClient<br/>(Gemma/OpenRouter)"]
+    subgraph LLM["LLM Fallback Chain (6-level)"]
+        GC["Gemini key 1"]
+        GF1["Gemini key 2"]
+        GF2["Gemini key 3"]
+        GF3["Gemini key 4"]
+        GR["Gemma/OpenRouter"]
         Echo["EchoLLMClient<br/>(mock)"]
     end
 
@@ -123,11 +124,13 @@ flowchart TB
     Gen --> GC
     Gen --> GF1
     Gen --> GF2
+    Gen --> GF3
     Gen --> GR
     Gen --> Echo
     GC -. rate limit .-> GF1
     GF1 -. rate limit .-> GF2
-    GF2 -. rate limit .-> GR
+    GF2 -. rate limit .-> GF3
+    GF3 -. rate limit .-> GR
     GR -. rate limit .-> Echo
     Ctx --> SQL
     Retrieve --> Qdrant
@@ -147,7 +150,7 @@ flowchart TB
     class Agent,Init,Retrieve,Tools,Skills,Ctx,Gen agent
     class Guard,Safety,PII,Cite,Rel guard
     class Storage,SQL,Qdrant,MemStore storage
-    class LLM,GC,GF1,GF2,GR,Echo llm
+    class LLM,GC,GF1,GF2,GF3,GR,Echo llm
 ```
 
 ### Frontend Architecture
@@ -199,7 +202,7 @@ graph TB
 | Frontend | Next.js 14, React 18, Tailwind CSS |
 | Vector DB | Qdrant (with in-memory fallback for tests) |
 | Memory | SQLite via aiosqlite |
-| LLM | Google Gemini (3 API keys) → Gemma/OpenRouter → EchoLLMClient (5-level fallback chain) |
+| LLM | Google Gemini (4 API keys) → Gemma/OpenRouter → EchoLLMClient (6-level fallback chain) |
 | Guardrails | Content safety, PII redaction, prompt injection detection |
 | Hallucination Reduction | Citation verifier, relevance threshold, confidence scoring |
 | Packaging | Docker Compose (backend + frontend + Qdrant) |
@@ -320,12 +323,44 @@ All I/O (database, HTTP, LLM calls) is async, enabling high concurrency with min
 ### Why heuristic guardrails instead of an LLM-based guard?
 Heuristic guardrails (regex patterns for toxicity, injection, PII) have zero latency, zero cost, and no external dependency. They run on every request before the LLM is invoked, providing a fast first line of defense. An LLM-based guard classifier would be more accurate but would add latency and cost proportional to every query. For production, we recommend adding a dedicated guardrail model (e.g., NeMo Guardrails, Guardrails AI) as a second pass.
 
+### Why 6-level LLM fallback chain?
+Free-tier API keys (Google Gemini, OpenRouter) have strict rate limits that cause frequent 429 errors. Rather than failing, the system cascades through 4 Gemini keys → Gemma via OpenRouter → EchoLLMClient mock. Each hop catches rate-limit exceptions transparently. This guarantees the app works without interruption in demos and CI, even when all upstream APIs are throttled.
+
 ### Why keyword-overlap for citation grounding?
 Computing grounding by measuring keyword overlap between LLM output sentences and retrieved chunk text is fast (no model inference), deterministic, and interpretable. A more accurate approach would use NLI-based entailment or BERTScore, but those introduce latency and cost. The keyword-overlap method catches the most common hallucination pattern — the LLM introducing facts not present in the source material — without requiring an external model.
 
-## Reviewer Test Cases
+## Benchmark Summary
 
-The following queries exercise all major system components. Run each against both Naive RAG and StreamRAG via the frontend (http://localhost:3000) or API:
+The automated benchmark (`python benchmark/run.py`) runs the full 22-query test set against both RAG modes and measures **four metrics**:
+
+| Metric | What it measures |
+|--------|-----------------|
+| **Latency (ms)** | End-to-end response time: start → complete answer |
+| **Tokens** | Total prompt + completion tokens consumed |
+| **Cost ($)** | Estimated API cost (per-token pricing model) |
+| **Grounding (%)** | Citation overlap between answer and retrieved chunks |
+
+### Key Results (Gemini + 6-level Fallback — 0 failures)
+
+| Metric | Naive RAG | StreamRAG | Winner |
+|--------|-----------|-----------|--------|
+| Avg Latency | 79.4 ms | **65.9 ms** | StreamRAG (17% faster) |
+| Min Latency | 7.0 ms | **5.7 ms** | StreamRAG |
+| Max Latency | 1437.4 ms | **1236.0 ms** | StreamRAG |
+
+### When to use each approach
+
+| Scenario | Better choice | Why |
+|----------|---------------|-----|
+| Simple Q&A, low latency needs | Naive RAG | Simpler pipeline, predictable performance |
+| Real-time chat, voice, UX-sensitive | **StreamRAG** | Lower TTFT, progressive rendering |
+| Heavy retrieval (20+ chunks) | **StreamRAG** | Context updates mid-generation |
+| Cost-sensitive, simple queries | Naive RAG | Fewer tokens streamed upfront |
+| Accuracy-critical, research | **StreamRAG** | Can refine with broad retrieval |
+
+See [BENCHMARK.md](./BENCHMARK.md) for the full report including per-category breakdowns, guardrails impact, and the complete test set.
+
+## Reviewer Test Cases
 
 | # | Query | Expected Behavior | System Component |
 |---|-------|-------------------|-----------------|

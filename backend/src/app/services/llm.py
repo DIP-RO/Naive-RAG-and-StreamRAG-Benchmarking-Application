@@ -169,6 +169,7 @@ class GoogleGenAIClient:
     api_key: str
     fallback_api_key: str | None = None
     fallback_api_key_2: str | None = None
+    fallback_api_key_3: str | None = None
     default_model: str = "gemini-flash-latest"
 
     def _all_keys(self) -> list[str]:
@@ -177,6 +178,8 @@ class GoogleGenAIClient:
             keys.append(self.fallback_api_key)
         if self.fallback_api_key_2:
             keys.append(self.fallback_api_key_2)
+        if self.fallback_api_key_3:
+            keys.append(self.fallback_api_key_3)
         return keys
 
     def _build_llm(self, model: str, max_tokens: int) -> ChatGoogleGenerativeAI:
@@ -487,6 +490,7 @@ class LLMFactory:
                 api_key=settings.google_api_key,
                 fallback_api_key=settings.google_api_key_fallback,
                 fallback_api_key_2=settings.google_api_key_fallback_2,
+                fallback_api_key_3=settings.google_api_key_fallback_3,
             )
         if provider == "openrouter" and settings.openrouter_api_key:
             return LangChainChatClient(
