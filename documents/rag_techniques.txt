@@ -1,0 +1,13 @@
+Retrieval-Augmented Generation Techniques
+
+Retrieval-Augmented Generation (RAG) is a technique that combines information retrieval with text generation. It enhances LLM outputs by first retrieving relevant documents from a knowledge base, then providing them as context to the model.
+
+Naive RAG follows a sequential pipeline: retrieve documents, then generate an answer. This is simple to implement but can be slow because generation must wait for retrieval to complete.
+
+StreamRAG improves on this by parallelizing retrieval and generation. It starts retrieving context immediately, begins generating as soon as initial context is available, and continues broad retrieval in the background. This reduces time-to-first-token and can improve factual grounding through mid-generation context updates.
+
+Key differences:
+- Naive RAG: retrieve → generate (sequential)
+- StreamRAG: retrieve + generate (parallel with background updates)
+
+Both approaches use vector databases (like Qdrant) for similarity search, embedding models for text vectorization, and reranking to improve result quality.

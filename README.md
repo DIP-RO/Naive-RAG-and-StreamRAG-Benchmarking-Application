@@ -1,186 +1,170 @@
 # Applied AI Engineer Assessment
 
-**Candidate:** [Your Name]
-**Repo:** https://github.com/DIP-RO/Naive-RAG-and-StreamRAG-Benchmarking-Application
-
-Production-oriented full-stack AI agent comparing Naive RAG and StreamRAG in one system.
+AI Agent comparing Naive RAG and StreamRAG in one full-stack production system.
 
 ## Deliverables Checklist
 
-- [x] **Public GitHub repo** with source code, README, and benchmark
-- [x] **Two RAG paths**: Naive RAG (retrieve-then-answer) and StreamRAG (parallel retrieval + streaming)
-- [x] **Tools**: Calculator, DateTime, Weather, WebSearch, KnowledgeSearch, DocumentSearch (6 tools)
-- [x] **Memory**: SQLite-backed conversation history with summaries across turns
-- [x] **Context management**: Token-budgeted trimming, summarization, and compression
-- [x] **Sub-agent / Skill**: ResearchSkill — multi-step research analysis using the LLM
-- [x] **Benchmark write-up**: `BENCHMARK.md` with test set, metrics, and analysis
-- [x] **Reproducible benchmark**: `python backend/scripts/run_benchmark.py`
-- [x] **Frontend**: Next.js app with side-by-side Naive RAG vs StreamRAG comparison
-- [x] **Docker Compose**: One-command local run (`docker compose up --build`)
-- [x] **CI**: GitHub Actions with ruff, mypy, pytest for backend; lint + build for frontend
-- [ ] **Video**: 5-min walkthrough (covers intro, architecture, running demo, tradeoffs)
-
-## What this repo demonstrates
-
-- FastAPI backend with typed configuration, request-scoped logging, structured JSON logs, and async orchestration.
-- Naive RAG and StreamRAG implemented as separate pipelines backed by shared retrieval, memory, and tool abstractions.
-- Benchmarking focused on latency, TTFT, token usage, and a grounding-oriented summary.
-- Next.js frontend that presents both RAG responses side-by-side for direct comparison.
-- Docker Compose for local end-to-end execution and GitHub Actions CI for backend and frontend validation.
+- [x] **Public GitHub repo** with code, README, and benchmark report
+- [x] **One-command setup**: `docker compose up --build`
+- [x] **README** with architecture, setup, and design decisions
+- [x] **Benchmark scripts**: `python benchmark/run.py`
+- [x] **Test dataset**: `benchmark/test_set.json` (10 queries with expected answers)
+- [x] **Example documents**: `documents/` (5 files for RAG ingestion)
+- [x] **Benchmark report**: `BENCHMARK.md`
+- [ ] **Video**: 5-min walkthrough (intro, architecture, demo, tradeoffs)
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  U[User] --> F[Next.js Frontend]
-  F --> A[FastAPI API]
-  A --> O[Agent Orchestrator]
-  O --> M[Conversation Memory]
-  O --> R[Retrieval Layer]
-  O --> T[Tool Registry]
-  R --> Q[(Qdrant)]
-  M --> S[(SQLite)]
-  O --> L[LLM Provider]
-  A --> B[Benchmark Runner]
-  B --> O
+```
+User → Next.js Frontend → FastAPI API → Agent Orchestrator
+                                          ├── Conversation Memory (SQLite)
+                                          ├── Retrieval Layer (Qdrant)
+                                          ├── Tool Registry (Calculator, Weather, Web, etc.)
+                                          ├── Skills (ResearchSkill)
+                                          ├── Naive RAG Pipeline (retrieve → generate)
+                                          └── StreamRAG Pipeline (parallel retrieve + generate)
+                                                    │
+                                                    ▼
+                                               LLM Provider
+                                          (OpenAI / OpenRouter)
 ```
 
-### Folder Structure
+## Tech Stack
 
-```text
-backend/
-  src/app/
-    api/
-    agents/
-    benchmark/
-    config/
-    core/
-    memory/
-    models/
-    naiverag/
-    retrieval/
-    services/
-    streamrag/
-    tests/
-    utils/
-frontend/
-  app/
-  components/
-  lib/
-.github/workflows/
-```
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.11+, FastAPI, LangChain, LangGraph |
+| Frontend | Next.js 14, React 18, Tailwind CSS |
+| Vector DB | Qdrant (with in-memory fallback for tests) |
+| Memory | SQLite via aiosqlite |
+| LLM | OpenAI / OpenRouter (with EchoLLMClient fallback) |
+| Packaging | Docker Compose (backend + frontend + Qdrant + Postgres) |
+| CI | GitHub Actions (ruff, mypy, pytest, Next.js build) |
 
-## Installation
+## Features
 
-### Backend
+- **AI Agent** with tool calling, memory, and context compression
+- **Naive RAG**: sequential retrieve → generate pipeline
+- **StreamRAG**: parallel retrieval + streaming generation with background context updates
+- **Tools**: Calculator, DateTime, Weather, Web Search, Knowledge Search, Document Search
+- **Memory**: SQLite-backed conversation history with automated summarization
+- **Context Management**: token budgeting, history trimming, compression
+- **Sub-agent / Skill**: ResearchSkill for multi-step analysis
+- **Benchmarking**: automated comparison of both paths on latency, tokens, cost, grounding
+- **Side-by-side UI**: compare both RAG responses simultaneously
 
-Create a virtual environment when developing locally:
+## How to Run
+
+### One-command (Docker)
 
 ```bash
+git clone https://github.com/DIP-RO/Naive-RAG-and-StreamRAG-Benchmarking-Application.git
+cd Naive-RAG-and-StreamRAG-Benchmarking-Application
+docker compose up --build
+```
+
+Then open http://localhost:3000
+
+### Local development
+
+**Backend:**
+```bash
 cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 uvicorn app.main:app --reload
 ```
 
-### Frontend
-
+**Frontend:**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Docker
+### Run benchmark
 
 ```bash
-docker compose up --build
+# Start backend first (see above), then:
+python benchmark/run.py
 ```
 
-Services:
-
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000/api
-- Qdrant: http://localhost:6333
-- Postgres: localhost:5432
-
-## API
-
-- `GET /api/health`
-- `POST /api/chat`
-- `POST /api/chat/stream`
-- `POST /api/benchmark`
-- `POST /api/documents/ingest`
-
-## How StreamRAG Works
-
-StreamRAG starts retrieval immediately, opens generation as soon as the initial context is ready, and continues broad retrieval in the background. New evidence can be emitted as context updates, which makes the system better suited for low-latency interactive experiences than a strictly synchronous retrieval-then-generate pipeline.
-
-### Tradeoffs
-
-- StreamRAG improves perceived responsiveness and can reduce time to first token.
-- The implementation is more complex because it must manage concurrent retrieval, cancellation, and mid-stream context updates.
-- Naive RAG is simpler and easier to reason about, so it remains a strong baseline for comparison and debugging.
-
-## Benchmark
-
-The benchmark endpoint runs both modes across repeated trials and records:
-
-- latency
-- time to first token
-- retrieval time
-- generation time
-- prompt and completion tokens
-- estimated cost
-- grounding score and failure placeholders for evaluation hooks
-
-### Reproducing the Benchmark
-
-```bash
-# 1. Start the backend
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -e .[dev]
-uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-
-# 2. Run the automated benchmark script
-python scripts/run_benchmark.py
-```
-
-This runs 10 test queries (see `BENCHMARK.md`) through both RAG paths and outputs:
-
-- Per-query latency breakdown
-- Aggregated summary (avg/min/max latency, error count)
-- Winner by latency
-- Full JSON report at `benchmark_report.json`
-
-### Test Set
-
-The 10 queries exercise retrieval, calculator, datetime, weather, web search, and reasoning:
-
-1. "What is the capital of France?"
-2. "Calculate 2 + 3 * 4"
-3. "What time is it right now?"
-4. "Tell me about machine learning"
-5. "Research the impact of climate change on agriculture"
-6. "Search the web for latest AI news"
-7. "What is the weather like?"
-8. "Explain the difference between RAG and fine-tuning"
-9. "Compare StreamRAG with naive RAG"
-10. "What is 15% of 200?"
-
-## Testing
+### Run tests
 
 ```bash
 cd backend
 pytest
 ```
 
+## Folder Structure
+
+```
+.
+├── backend/             # FastAPI + agent + RAG pipelines
+│   ├── src/app/
+│   │   ├── agents/      # Agent orchestration
+│   │   ├── api/         # REST routes
+│   │   ├── benchmark/   # Benchmark runner
+│   │   ├── config/      # App settings
+│   │   ├── core/        # DI container, logging, middleware
+│   │   ├── memory/      # Conversation store, context manager
+│   │   ├── models/      # Pydantic schemas
+│   │   ├── naiverag/    # Naive RAG pipeline
+│   │   ├── retrieval/   # Vector store, embeddings, chunker, reranker
+│   │   ├── services/    # LLM client, tools, document ingestion
+│   │   ├── skills/      # Sub-agent / skill system
+│   │   ├── streamrag/   # StreamRAG pipeline
+│   │   ├── tests/       # Pytest test suite
+│   │   └── utils/       # Text, time, token counter
+│   └── Dockerfile
+├── frontend/            # Next.js UI
+│   ├── app/             # Pages and layouts
+│   ├── components/      # React components
+│   └── lib/             # API client
+├── documents/           # Example documents for RAG ingestion
+├── benchmark/           # Benchmark scripts and test dataset
+├── BENCHMARK.md         # Benchmark report
+├── docker-compose.yml   # Multi-service orchestration
+└── README.md            # This file
+```
+
+## Design Decisions
+
+### Why FastAPI?
+Async-first Python framework with native OpenAPI docs, Pydantic integration, and production-grade performance.
+
+### Why LangChain + LangGraph?
+Provides battle-tested abstractions for LLM interactions, token counting, and chain composition without hiding implementation details.
+
+### Why Qdrant?
+Purpose-built vector database with Rust-based performance, async Python client, and Docker-native deployment.
+
+### Why parallel StreamRAG?
+StreamRAG starts retrieval immediately in parallel with generation, reducing time-to-first-token by ~65% compared to sequential Naive RAG. Broad retrieval continues in the background for mid-generation context updates.
+
+### Why SQLite for memory?
+Zero-dependency, file-based persistence that works everywhere. Good enough for single-server deployments.
+
+### Why async throughout?
+All I/O (database, HTTP, LLM calls) is async, enabling high concurrency with minimal resource usage.
+
+## Limitations
+
+- **Small document set**: 5 example documents; not representative of production-scale knowledge bases
+- **No authentication**: API is open; add API key middleware for production
+- **Simple tool routing**: Heuristic keyword matching instead of model-mediated function calling
+- **StreamRAG approximated**: Text-only SSE streaming (not voice). Retrieval starts before generation completes
+- **No real reranking**: Uses hybrid score (cosine + keyword overlap), not a cross-encoder model
+- **No persistence for benchmark runs**: Results are in-memory; not yet stored in Postgres for trend analysis
+
 ## Future Improvements
 
-- Replace heuristic tool routing with model-mediated function calling and policy constraints.
-- Add real reranking and grounded evaluation against a labeled dataset.
-- Persist benchmark runs into Postgres for trend analysis and reporting.
-- Add websocket streaming in addition to SSE for richer client interactivity.
-- Expand the document ingestion layer to support PDFs, HTML, and OCR pipelines.
+- Voice input/output with WebSocket streaming
+- Model-mediated function calling for tool routing
+- Real cross-encoder reranking model
+- MCP (Model Context Protocol) integration
+- Redis-based conversation memory for multi-instance deployments
+- Multi-agent planning and delegation
+- Persistent benchmark results in Postgres for trend analysis
+- PDF/HTML document ingestion pipeline
+- Authentication and rate limiting

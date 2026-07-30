@@ -1,0 +1,16 @@
+Climate Change and Agriculture
+
+Climate change significantly impacts global agriculture through changing weather patterns, increased frequency of extreme events, and shifting growing seasons. Key effects include:
+
+Temperature Rise: Average global temperatures have increased by 1.1°C since pre-industrial times. This affects crop yields, with wheat yields declining by 6% per degree Celsius of warming.
+
+Water Scarcity: Changing precipitation patterns lead to droughts in some regions and floods in others. Agriculture accounts for 70% of global freshwater use.
+
+Adaptation Strategies:
+- Drought-resistant crop varieties developed through genetic modification
+- Precision agriculture using IoT sensors and AI
+- Improved irrigation systems and water management
+- Crop diversification and rotation
+- Soil conservation techniques like no-till farming
+
+Mitigation approaches include carbon sequestration through regenerative agriculture, reducing fertilizer use, and adopting renewable energy on farms.

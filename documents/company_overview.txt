@@ -1,0 +1,12 @@
+Company Overview
+
+Next Ventures is a technology consulting firm specializing in AI and machine learning solutions. Founded in 2020, the company has grown to serve over 200 enterprise clients across North America and Europe. Their core services include AI strategy consulting, custom model development, and MLOps infrastructure.
+
+The company's flagship product, FundedNext, is an AI-powered platform that helps startups prepare for venture capital funding rounds. It analyzes market trends, financial data, and investor preferences to provide actionable recommendations. FundedNext has processed over $2B in funding rounds since its launch.
+
+Key leadership:
+- CEO: Sarah Chen, formerly VP of Engineering at DataDog
+- CTO: Marcus Johnson, PhD in ML from Stanford
+- Head of AI: Dr. Aisha Patel, former researcher at DeepMind
+
+The engineering team uses Python, Rust, and TypeScript, with infrastructure on AWS EKS. They deploy models using custom inference servers written in Rust for low-latency serving.

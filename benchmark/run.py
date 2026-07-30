@@ -1,8 +1,12 @@
 """
-Automated benchmark: runs both RAG paths against a fixed test set and prints results.
+Automated benchmark: runs both RAG paths against the test dataset and prints results.
 
 Usage:
-    python scripts/run_benchmark.py
+    # Start backend first:
+    cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+    # In another terminal:
+    python benchmark/run.py
 
 Requires the backend server to be running at http://localhost:8000.
 """
@@ -13,65 +17,65 @@ from pathlib import Path
 import httpx
 
 BASE_URL = "http://localhost:8000/api"
+TEST_SET_PATH = Path(__file__).parent / "test_set.json"
+REPORT_PATH = Path("benchmark_report.json")
 
-TEST_SET = [
-    "What is the capital of France?",
-    "Calculate 2 + 3 * 4",
-    "What time is it right now?",
-    "Tell me about machine learning",
-    "Research the impact of climate change on agriculture",
-    "Search the web for latest AI news",
-    "What is the weather like?",
-    "Explain the difference between RAG and fine-tuning",
-    "Compare StreamRAG with naive RAG",
-    "What is 15% of 200?",
-]
+
+def load_test_set() -> list[dict]:
+    with open(TEST_SET_PATH) as f:
+        return json.load(f)
 
 
 def run_benchmark() -> dict:
-    """Run both RAG modes across all queries and return aggregated results."""
+    test_set = load_test_set()
+    queries = [item["query"] for item in test_set]
     client = httpx.Client(base_url=BASE_URL, timeout=60.0)
     results = {"naive": {}, "stream": {}}
 
-    for query in TEST_SET:
+    for item in test_set:
+        qid = item["id"]
+        query = item["query"]
         for mode in ("naive", "stream"):
             resp = client.post("/chat", json={"message": query, "mode": mode})
             if resp.status_code != 200:
-                results[mode][query] = {"error": resp.text}
+                results[mode][qid] = {"error": resp.text, "query": query}
                 continue
             data = resp.json()
-            results[mode][query] = {
+            results[mode][qid] = {
+                "query": query,
+                "expected": item["expected_answer"],
+                "answer": data["answer"],
                 "latency_ms": data["latency_ms"],
-                "answer_preview": data["answer"][:120],
+                "usage": data["usage"],
+                "tool_calls": data.get("tool_calls", []),
             }
 
-    # Aggregate
     summary = {}
     for mode in ("naive", "stream"):
-        latencies = [
-            v["latency_ms"]
-            for v in results[mode].values()
-            if "latency_ms" in v
-        ]
+        latencies = [v["latency_ms"] for v in results[mode].values() if "latency_ms" in v]
         errors = sum(1 for v in results[mode].values() if "error" in v)
         summary[mode] = {
             "avg_latency_ms": sum(latencies) / len(latencies) if latencies else 0,
             "min_latency_ms": min(latencies) if latencies else 0,
             "max_latency_ms": max(latencies) if latencies else 0,
             "errors": errors,
-            "total": len(TEST_SET),
+            "total": len(test_set),
         }
 
-    return {"test_set_size": len(TEST_SET), "results": results, "summary": summary}
+    return {"test_set_size": len(test_set), "results": results, "summary": summary}
 
 
 if __name__ == "__main__":
-    print(f"Running benchmark against {BASE_URL} with {len(TEST_SET)} queries...")
-    print(f"Test set: {TEST_SET}\n")
+    test_set = load_test_set()
+    print(f"Running benchmark against {BASE_URL}")
+    print(f"Test set: {len(test_set)} queries ({TEST_SET_PATH})\n")
+    for item in test_set:
+        print(f"  [{item['id']}] ({item['category']}) {item['query']}")
+
     report = run_benchmark()
 
-    print("=" * 60)
-    print("SUMMARY")
+    print("\n" + "=" * 60)
+    print("BENCHMARK SUMMARY")
     print("=" * 60)
     for mode, s in report["summary"].items():
         print(f"\n{mode.upper()} RAG:")
@@ -83,6 +87,5 @@ if __name__ == "__main__":
     winner = "stream" if report["summary"]["stream"]["avg_latency_ms"] < report["summary"]["naive"]["avg_latency_ms"] else "naive"
     print(f"\nWinner by latency: {winner.upper()} RAG")
 
-    report_path = Path("benchmark_report.json")
-    report_path.write_text(json.dumps(report, indent=2))
-    print(f"\nFull report written to {report_path}")
+    REPORT_PATH.write_text(json.dumps(report, indent=2))
+    print(f"\nFull report: {REPORT_PATH}")

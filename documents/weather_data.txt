@@ -1,0 +1,13 @@
+Weather Patterns and Forecasting
+
+Modern weather forecasting uses a combination of satellite data, ground stations, and computer models to predict atmospheric conditions. The World Meteorological Organization coordinates global data sharing.
+
+Key Concepts:
+- Temperature is measured in Celsius or Fahrenheit
+- Wind speed is measured in km/h or knots
+- Precipitation includes rain, snow, sleet, and hail
+- Atmospheric pressure is measured in millibars (mb) or hectopascals (hPa)
+
+Weather APIs like Open-Meteo provide free access to forecast data. They use numerical weather prediction models that solve mathematical equations describing atmospheric behavior.
+
+Climate is different from weather: climate describes long-term patterns (30+ years), while weather describes short-term conditions (hours to days).
