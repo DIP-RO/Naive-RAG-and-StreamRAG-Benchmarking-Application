@@ -4,8 +4,12 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any
+from typing import Any, TypedDict
 from uuid import uuid4
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
+from langsmith import traceable
 
 from app.core.config import AppSettings
 from app.memory.context_manager import ContextBudget, ContextManager
@@ -24,6 +28,26 @@ from app.services.tools import ToolName, ToolRegistry
 from app.skills.registry import SkillRegistry
 from app.utils.token_counter import count_tokens
 
+_STREAM_BUFFER_LIMIT = 100_000
+
+
+class AgentState(TypedDict):
+    request: ChatRequest
+    conversation_id: str
+    request_id: str
+    history: list[ChatMessage]
+    tool_results: list[Any]
+    skill_results: list[Any]
+    retrieved_chunks: list[RetrievalChunk]
+    reranked: list[RetrievalChunk]
+    context_text: str
+    summary: str | None
+    prompt_messages: list[ChatMessage]
+    answer_text: str
+    usage: dict[str, int]
+    answer_parts: list[str]
+    started: float
+
 
 @dataclass(slots=True)
 class AgentDependencies:
@@ -40,23 +64,61 @@ class AgentDependencies:
 class AgentOrchestrator:
     def __init__(self, deps: AgentDependencies) -> None:
         self.deps = deps
+        self._graph = self._build_graph()
 
-    async def answer(self, request: ChatRequest) -> ChatResponse:
-        request_id = str(uuid4())
-        conversation_id = request.conversation_id or str(uuid4())
-        started = perf_counter()
+    def _build_graph(self) -> StateGraph:
+        graph = StateGraph(AgentState)
+
+        graph.add_node("initialize", self._node_initialize)
+        graph.add_node("retrieve", self._node_retrieve)
+        graph.add_node("run_tools", self._node_run_tools)
+        graph.add_node("run_skills", self._node_run_skills)
+        graph.add_node("build_context", self._node_build_context)
+        graph.add_node("generate", self._node_generate)
+
+        graph.set_entry_point("initialize")
+        graph.add_edge("initialize", "retrieve")
+        graph.add_edge("initialize", "run_tools")
+        graph.add_edge("initialize", "run_skills")
+        graph.add_edge("retrieve", "build_context")
+        graph.add_edge("run_tools", "build_context")
+        graph.add_edge("run_skills", "build_context")
+        graph.add_edge("build_context", "generate")
+        graph.add_edge("generate", END)
+
+        return graph.compile(checkpointer=MemorySaver())
+
+    async def _node_initialize(self, state: AgentState) -> AgentState:
+        request = state["request"]
+        conversation_id = state["conversation_id"]
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
+        state["history"] = history
+        return state
 
-        tool_results = await self._maybe_run_tools(request.message)
-        skill_results = await self.deps.skills.run_matching(request.message, context={})
-        retrieved_chunks = await self.deps.vector_store.search(request.message, limit=self.deps.settings.naive_top_k)
-        reranked = self.deps.reranker.rerank(request.message, retrieved_chunks)
-        context_text = self._build_context_text(reranked, tool_results, skill_results)
-        summary = await self.deps.conversation_store.get_summary(conversation_id)
+    async def _node_retrieve(self, state: AgentState) -> AgentState:
+        request = state["request"]
+        chunks = await self.deps.vector_store.search(request.message, limit=self.deps.settings.naive_top_k)
+        reranked = self.deps.reranker.rerank(request.message, chunks)
+        state["retrieved_chunks"] = chunks
+        state["reranked"] = reranked
+        return state
+
+    async def _node_run_tools(self, state: AgentState) -> AgentState:
+        state["tool_results"] = await self._maybe_run_tools(state["request"].message)
+        return state
+
+    async def _node_run_skills(self, state: AgentState) -> AgentState:
+        state["skill_results"] = await self.deps.skills.run_matching(state["request"].message, context={})
+        return state
+
+    async def _node_build_context(self, state: AgentState) -> AgentState:
+        request = state["request"]
+        context_text = self._build_context_text(state["reranked"], state["tool_results"], state["skill_results"])
+        summary = await self.deps.conversation_store.get_summary(state["conversation_id"])
         prompt_messages = self.deps.context_manager.build_prompt_messages(
-            history=history,
+            history=state["history"],
             summary=summary.summary if summary else None,
             retrieved_context=context_text,
             user_message=request.message,
@@ -66,31 +128,74 @@ class AgentOrchestrator:
             ),
             model=request.model or self.deps.settings.default_llm_model,
         )
+        state["context_text"] = context_text
+        state["summary"] = summary.summary if summary else None
+        state["prompt_messages"] = prompt_messages
+        return state
+
+    async def _node_generate(self, state: AgentState) -> AgentState:
+        request = state["request"]
         answer_text, usage = await self.deps.llm.generate_text(
-            prompt_messages,
+            state["prompt_messages"],
             model=request.model or self.deps.settings.default_llm_model,
             max_tokens=self.deps.settings.max_output_tokens,
         )
-        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="assistant", content=answer_text))
-        if count_tokens(context_text) > 2_000:
-            await self.deps.conversation_store.store_summary(conversation_id, self._summarize_locally(history, request.message, answer_text))
+        await self.deps.conversation_store.append(state["conversation_id"], ChatMessage(role="assistant", content=answer_text))
+        if count_tokens(state["context_text"]) > 2_000:
+            await self.deps.conversation_store.store_summary(state["conversation_id"], self._summarize_locally(state["history"], request.message, answer_text))
+        state["answer_text"] = answer_text
+        state["usage"] = usage
+        return state
+
+    @traceable(run_type="chain", name="AgentOrchestrator.answer")
+    async def answer(self, request: ChatRequest) -> ChatResponse:
+        started = perf_counter()
+        request_id = str(uuid4())
+        conversation_id = request.conversation_id or str(uuid4())
+
+        initial_state: AgentState = {
+            "request": request,
+            "conversation_id": conversation_id,
+            "request_id": request_id,
+            "history": [],
+            "tool_results": [],
+            "skill_results": [],
+            "retrieved_chunks": [],
+            "reranked": [],
+            "context_text": "",
+            "summary": None,
+            "prompt_messages": [],
+            "answer_text": "",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "answer_parts": [],
+            "started": started,
+        }
+
+        config = {"configurable": {"thread_id": conversation_id}}
+        result = await self._graph.ainvoke(initial_state, config)
         latency_ms = (perf_counter() - started) * 1000.0
+
+        tool_results = result.get("tool_results", [])
+        skill_results = result.get("skill_results", [])
+        reranked = result.get("reranked", [])
+
         return ChatResponse(
             conversation_id=conversation_id,
             mode=request.mode,
-            answer=answer_text,
+            answer=result.get("answer_text", ""),
             citations=reranked,
             tool_calls=self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results],
-            usage=usage,
+            usage=result.get("usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
             latency_ms=latency_ms,
             request_id=request_id,
             trace={"retrieved_chunks": len(reranked), "tools": [r.name.value for r in tool_results if not isinstance(r, Exception)], "skills": [r.name for r in skill_results]},
         )
 
+    @traceable(run_type="chain", name="AgentOrchestrator.stream_answer")
     async def stream_answer(self, request: ChatRequest) -> AsyncIterator[str]:
+        started = perf_counter()
         request_id = str(uuid4())
         conversation_id = request.conversation_id or str(uuid4())
-        started = perf_counter()
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
@@ -140,6 +245,7 @@ class AgentOrchestrator:
         ).model_dump_json()
 
         answer_parts: list[str] = []
+        buffer_size = 0
         try:
             async for delta in self.deps.llm.stream_text(
                 prompt_messages,
@@ -147,6 +253,10 @@ class AgentOrchestrator:
                 max_tokens=self.deps.settings.max_output_tokens,
             ):
                 answer_parts.append(delta)
+                buffer_size += len(delta)
+                if buffer_size > _STREAM_BUFFER_LIMIT:
+                    answer_parts = [answer_parts[-1]]
+                    buffer_size = len(answer_parts[-1])
                 yield StreamEvent(type="delta", conversation_id=conversation_id, request_id=request_id, payload={"text": delta}).model_dump_json()
         except Exception as exc:  # noqa: BLE001
             yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"error": f"Generation failed: {exc}"}).model_dump_json()
@@ -190,8 +300,9 @@ class AgentOrchestrator:
             return []
         return await self.deps.tools.run_many(requested, context={"query": message})
 
-    def _build_context_text(self, chunks: list[RetrievalChunk], tool_results: list[Any], skill_results: list[Any] | None = None) -> str:
-        parts = []
+    @staticmethod
+    def _build_context_text(chunks: list[RetrievalChunk], tool_results: list[Any], skill_results: list[Any] | None = None) -> str:
+        parts: list[str] = []
         for chunk in chunks:
             parts.append(f"[{chunk.title}] {chunk.content}")
         for result in tool_results:

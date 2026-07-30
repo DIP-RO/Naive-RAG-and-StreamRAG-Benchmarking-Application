@@ -5,13 +5,39 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import httpx
-from openai import AsyncOpenAI
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from app.core.config import AppSettings
 from app.models.schemas import ChatMessage
 from app.utils.http_client import SHARED_HTTP_CLIENT
+
+_LANGCHAIN_ROLE_MAP: dict[str, type[BaseMessage]] = {
+    "system": SystemMessage,
+    "user": HumanMessage,
+    "assistant": AIMessage,
+}
+
+
+def _to_langchain(messages: list[ChatMessage]) -> list[BaseMessage]:
+    result: list[BaseMessage] = []
+    for msg in messages:
+        cls = _LANGCHAIN_ROLE_MAP.get(msg.role)
+        if cls:
+            result.append(cls(content=msg.content))
+    return result
+
+
+def _extract_usage(response: Any) -> dict[str, int]:
+    if response is None:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    usage = getattr(response, "usage_metadata", None) or {}
+    return {
+        "prompt_tokens": usage.get("input_tokens", 0),
+        "completion_tokens": usage.get("output_tokens", 0),
+        "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+    }
 
 
 class LLMClient(Protocol):
@@ -23,59 +49,56 @@ class LLMClient(Protocol):
 
 
 @dataclass
-class OpenAIChatClient:
+class LangChainChatClient:
+    """LangChain-based LLM client supporting OpenAI and OpenRouter."""
+
     api_key: str
-    _client: AsyncOpenAI
+    base_url: str | None = None
+    default_model: str = "gpt-4.1"
 
-    def __init__(self, api_key: str) -> None:
-        self.api_key = api_key
-        self._client = AsyncOpenAI(api_key=api_key, http_client=SHARED_HTTP_CLIENT)
-
-    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)))
-    async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
-        response = await self._client.chat.completions.create(
-            model=model,
-            messages=[message.model_dump(exclude_none=True) for message in messages],
-            max_tokens=max_tokens,
-            temperature=0.2,
-        )
-        text = response.choices[0].message.content or ""
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
+    def _build_llm(self, model: str, max_tokens: int) -> BaseChatModel:
+        kwargs: dict[str, Any] = {
+            "api_key": self.api_key,
+            "model": model,
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "http_client": SHARED_HTTP_CLIENT,
         }
-        return text, usage
+        if self.base_url:
+            kwargs["base_url"] = self.base_url
+        return ChatOpenAI(**kwargs)
+
+    async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
+        llm = self._build_llm(model, max_tokens)
+        lc_messages = _to_langchain(messages)
+        response = await llm.ainvoke(lc_messages)
+        usage = _extract_usage(response)
+        return response.content if isinstance(response.content, str) else "", usage
 
     async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
-        stream = await self._client.chat.completions.create(
-            model=model,
-            messages=[message.model_dump(exclude_none=True) for message in messages],
-            max_tokens=max_tokens,
-            temperature=0.2,
-            stream=True,
-        )
-        async for event in stream:
-            delta = event.choices[0].delta.content if event.choices else None
-            if delta:
-                yield delta
+        llm = self._build_llm(model, max_tokens)
+        lc_messages = _to_langchain(messages)
+        async for chunk in llm.astream(lc_messages):
+            content = chunk.content if isinstance(chunk.content, str) else ""
+            if content:
+                yield content
 
 
 @dataclass
-class OpenRouterChatClient:
+class OpenRouterClient:
+    """Direct OpenRouter client using httpx (used as fallback/reference)."""
+
     api_key: str
     base_url: str = "https://openrouter.ai/api/v1"
     app_name: str = "Applied AI Engineer Assessment"
     referer: str | None = None
 
-    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)))
     async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
         payload: dict[str, Any] = {
             "model": model,
-            "messages": [message.model_dump(exclude_none=True) for message in messages],
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
             "max_tokens": max_tokens,
             "temperature": 0.2,
-            "reasoning": {"enabled": True},
         }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -95,15 +118,13 @@ class OpenRouterChatClient:
             "total_tokens": int(usage_payload.get("total_tokens", 0)),
         }
 
-    @retry(wait=wait_exponential(min=1, max=8), stop=stop_after_attempt(3), retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)))
     async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
         payload: dict[str, Any] = {
             "model": model,
-            "messages": [message.model_dump(exclude_none=True) for message in messages],
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
             "max_tokens": max_tokens,
             "temperature": 0.2,
             "stream": True,
-            "reasoning": {"enabled": True},
         }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -146,32 +167,10 @@ class LLMFactory:
     def build(settings: AppSettings) -> LLMClient:
         provider = settings.default_llm_provider
         if provider == "openrouter" and settings.openrouter_api_key:
-            return OpenRouterChatClient(
+            return LangChainChatClient(
                 api_key=settings.openrouter_api_key,
-                base_url=settings.openrouter_base_url,
-                app_name=settings.openrouter_app_name,
-                referer=settings.openrouter_referer,
+                base_url=settings.openrouter_base_url.rstrip("/") + "/v1",
             )
         if provider == "openai" and settings.openai_api_key:
-            return OpenAIChatClient(api_key=settings.openai_api_key)
+            return LangChainChatClient(api_key=settings.openai_api_key)
         return EchoLLMClient()
-
-
-class JsonLLM:
-    def __init__(self, client: LLMClient, model: str) -> None:
-        self.client = client
-        self.model = model
-
-    async def generate(self, messages: list[ChatMessage], schema_name: str) -> dict[str, Any]:
-        prompt = messages + [
-            ChatMessage(
-                role="system",
-                content=(
-                    "Return valid JSON only. "
-                    f"Schema name: {schema_name}. "
-                    "Do not include markdown, code fences, or commentary."
-                ),
-            )
-        ]
-        text, _ = await self.client.generate_text(prompt, model=self.model, max_tokens=800)
-        return json.loads(text)

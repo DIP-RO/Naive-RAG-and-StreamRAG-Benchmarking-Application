@@ -15,18 +15,158 @@ AI Agent comparing Naive RAG and StreamRAG in one full-stack production system.
 
 ## Architecture
 
+### Backend Architecture
+
+```mermaid
+graph TB
+    subgraph Frontend["Frontend (Next.js 14)"]
+        UI["Landing Page<br/>(/)"]
+        Benchmark["Benchmark Dashboard<br/>(/benchmark)"]
+        API["API Client<br/>(lib/api.ts)"]
+    end
+
+    subgraph Backend["Backend (FastAPI)"]
+        Routes["API Routes<br/>(routes.py)"]
+        Container["DI Container<br/>(container.py)"]
+
+        subgraph Agent["Agent Layer (LangGraph)"]
+            Graph["StateGraph<br/>(orchestrator.py)"]
+            Nodes["Nodes:<br/>• initialize<br/>• retrieve<br/>• run_tools<br/>• run_skills<br/>• build_context<br/>• generate"]
+            Memory["MemorySaver<br/>(checkpointer)"]
+        end
+
+        subgraph RAG["RAG Pipelines"]
+            Naive["Naive RAG<br/>retrieve → generate<br/>(sequential)"]
+            Stream["StreamRAG<br/>parallel retrieve +<br/>streaming generate"]
+        end
+
+        subgraph Retrieval["Retrieval Layer"]
+            Embeddings["Embeddings<br/>• OpenAI text-embedding-3-small<br/>• Deterministic (fallback)"]
+            VectorDB["Vector Store<br/>• Qdrant (prod)<br/>• InMemory (test)"]
+            Chunker["Chunker<br/>(sentence-aware,<br/>overlap)"]
+            Reranker["HybridReranker<br/>(cosine + keyword)"]
+        end
+
+        subgraph Tools["Tool Registry"]
+            Calc["CalculatorTool<br/>(safe eval with<br/>AST parsing)"]
+            DT["DateTimeTool"]
+            Weather["WeatherTool<br/>(Open-Meteo API)"]
+            Web["WebSearchTool"]
+            DocSearch["DocumentSearchTool"]
+            KnowSearch["KnowledgeSearchTool"]
+        end
+
+        subgraph Skills["Skills (Sub-agents)"]
+            Research["ResearchSkill<br/>(multi-step analysis)"]
+            SkillReg["SkillRegistry"]
+        end
+
+        subgraph Memory["Memory & Context"]
+            ConvStore["ConversationStore<br/>(SQLite - persistent<br/>connection pool)"]
+            CtxMgr["ContextManager<br/>(token budget,<br/>history trimming)"]
+        end
+
+        subgraph LLM["LLM Providers"]
+            LangChainClient["LangChainChatClient<br/>(ChatOpenAI wrapper)"]
+            ORClient["OpenRouterClient<br/>(direct httpx)"]
+            EchoClient["EchoLLMClient<br/>(test fallback)"]
+        end
+    end
+
+    subgraph Monitoring["Observability"]
+        LS["LangSmith<br/>(@traceable decorators)"]
+        LG["LangGraph<br/>(StateGraph tracing)"]
+    end
+
+    subgraph Data["Data Stores"]
+        Qdrant["Qdrant v1.11.4<br/>(vector database)"]
+        PG["PostgreSQL 16<br/>(available)"]
+        FS["File System<br/>(documents/)"]
+    end
+
+    UI --> Routes
+    Benchmark --> Routes
+    API --> Routes
+    Routes --> Container
+    Container --> Agent
+    Container --> RAG
+    Container --> Retrieval
+    Container --> Tools
+    Container --> Skills
+    Container --> Memory
+    Container --> LLM
+
+    Graph --> Nodes
+    Graph --> Memory
+    Naive --> Graph
+    Stream --> Graph
+    Embeddings --> LangChainClient
+    Embeddings --> EchoClient
+    LangChainClient --> ORClient
+    LangChainClient --> EchoClient
+
+    VectorDB --> Qdrant
+    VectorDB --> FS
+    Research --> LangChainClient
+    Research --> EchoClient
+
+    Routes -- "@traceable" --> LS
+    Graph -- "LangGraph tracing" --> LG
+    ConvStore --> PG
+
+    classDef frontend fill:#1e293b,stroke:#64748b,color:#f8fafc
+    classDef backend fill:#1e1b4b,stroke:#6366f1,color:#f8fafc
+    classDef storage fill:#0f172a,stroke:#f59e0b,color:#f8fafc
+    classDef llm fill:#0c0a1e,stroke:#a855f7,color:#f8fafc
+    classDef observability fill:#064e3b,stroke:#34d399,color:#f8fafc
+    classDef data fill:#451a03,stroke:#fb923c,color:#f8fafc
+    class Frontend,UI,Benchmark,API frontend
+    class Backend,Routes,Container,Agent,Graph,Nodes,Memory,RAG,Naive,Stream,Retrieval,Embeddings,VectorDB,Chunker,Reranker,Tools,Calc,DT,Weather,Web,DocSearch,KnowSearch,Skills,Research,SkillReg,ConvStore,CtxMgr backend
+    class LLM,LangChainClient,ORClient,EchoClient llm
+    class Monitoring,LS,LG observability
+    class Data,Qdrant,PG,FS data
+    class Qdrant,PG,FS storage
 ```
-User → Next.js Frontend → FastAPI API → Agent Orchestrator
-                                          ├── Conversation Memory (SQLite)
-                                          ├── Retrieval Layer (Qdrant)
-                                          ├── Tool Registry (Calculator, Weather, Web, etc.)
-                                          ├── Skills (ResearchSkill)
-                                          ├── Naive RAG Pipeline (retrieve → generate)
-                                          └── StreamRAG Pipeline (parallel retrieve + generate)
-                                                    │
-                                                    ▼
-                                               LLM Provider
-                                          (OpenAI / OpenRouter)
+
+### Frontend Architecture
+
+```mermaid
+graph TB
+    subgraph Pages["Next.js Pages"]
+        Home["/ (Landing Page)<br/>Hero + Feature Cards + Nav Link"]
+        Benchmark["/benchmark<br/>BenchmarkDashboard"]
+        Health["/api/health<br/>Health Check Endpoint"]
+    end
+
+    subgraph Components["React Components"]
+        Dashboard["BenchmarkDashboard<br/>• Prompt input<br/>• Side-by-side RAG responses<br/>• MetricBadge grid (6 metrics)<br/>• Winner banner<br/>• JSON output (collapsible)"]
+        MetricBadge["MetricBadge<br/>(memoized component)"]
+    end
+
+    subgraph Services["Services"]
+        APIClient["lib/api.ts<br/>• sendChat()<br/>• runBenchmark()<br/>• request() with AbortController timeout"]
+    end
+
+    subgraph Config["Configuration"]
+        Styles["globals.css<br/>(hero-grid,<br/>Inter font family)"]
+        Layout["layout.tsx<br/>(RootLayout with metadata)"]
+    end
+
+    Home --> Dashboard
+    Benchmark --> Dashboard
+    Dashboard --> APIClient
+    Dashboard --> MetricBadge
+    APIClient --> BackendAPI["FastAPI Backend (port 8000)"]
+    Health --> BackendAPI
+
+    classDef pages fill:#1e293b,stroke:#64748b,color:#f8fafc
+    classDef components fill:#1e1b4b,stroke:#6366f1,color:#f8fafc
+    classDef services fill:#0f172a,stroke:#f59e0b,color:#f8fafc
+    classDef config fill:#0c0a1e,stroke:#a855f7,color:#f8fafc
+    class Home,Benchmark,Health pages
+    class Dashboard,MetricBadge components
+    class APIClient,BackendAPI services
+    class Styles,Layout config
 ```
 
 ## Tech Stack

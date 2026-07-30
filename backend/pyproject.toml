@@ -19,7 +19,12 @@ dependencies = [
   "qdrant-client>=1.10.1",
   "openai>=1.40.0",
   "tiktoken>=0.7.0",
-  "anyio>=4.4.0"
+  "anyio>=4.4.0",
+  "langchain>=0.3.0",
+  "langchain-community>=0.3.0",
+  "langchain-openai>=0.3.0",
+  "langgraph>=0.4.0",
+  "langsmith>=0.2.0"
 ]
 
 [project.optional-dependencies]
@@ -29,7 +34,8 @@ dev = [
   "pytest-cov>=5.0.0",
   "respx>=0.21.1",
   "ruff>=0.6.2",
-  "mypy>=1.11.0"
+  "mypy>=1.11.0",
+  "langsmith>=0.2.0"
 ]
 
 [project.scripts]

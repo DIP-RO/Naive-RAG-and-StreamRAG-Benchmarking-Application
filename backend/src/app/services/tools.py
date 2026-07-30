@@ -30,9 +30,12 @@ class CalculatorTool:
     name = ToolName.calculator
 
     async def execute(self, *, query: str, context: dict[str, Any]) -> ToolResult:
-        expression = self._extract_expression(query)
-        value = self._safe_eval(expression)
-        return ToolResult(name=self.name, output=str(value), metadata={"expression": expression})
+        try:
+            expression = self._extract_expression(query)
+            value = self._safe_eval(expression)
+            return ToolResult(name=self.name, output=str(value), metadata={"expression": expression})
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(name=self.name, output=f"Error: {exc}", metadata={"expression": query, "error": str(exc)})
 
     @staticmethod
     def _extract_expression(text: str) -> str:
