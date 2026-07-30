@@ -196,17 +196,30 @@ class EchoLLMClient:
             idx = system_text.index(evidence_prefix)
             evidence = system_text[idx + len(evidence_prefix) :].strip()
             candidates = []
-            for line in evidence.split("\n"):
-                line = line.strip()
+            raw_lines = evidence.split("\n")
+            i = 0
+            while i < len(raw_lines):
+                line = raw_lines[i].strip()
                 if not line.startswith("["):
+                    i += 1
                     continue
                 if "]" not in line:
+                    i += 1
                     continue
                 colon = line.index("]")
                 title = line[1:colon]
                 if title.startswith("skill:"):
+                    i += 1
                     continue
                 content = line[colon + 1 :].strip()
+                i += 1
+                while i < len(raw_lines):
+                    nxt = raw_lines[i].strip()
+                    if nxt.startswith("["):
+                        break
+                    if nxt:
+                        content += " " + nxt
+                    i += 1
                 if not content:
                     continue
                 qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
@@ -342,7 +355,7 @@ class EchoLLMClient:
                     if scored:
                         scored.sort(key=lambda x: x[0], reverse=True)
                         best_title, best_content = scored[0][1], scored[0][2]
-                        answer = f"[{best_title}] {best_content[:300]}"
+                        answer = f"[{best_title}] {best_content[:2000]}"
 
         if not answer:
             topics = [
