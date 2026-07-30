@@ -29,7 +29,7 @@ const MetricBadge = memo(function MetricBadge({ label, value, icon, good }: Metr
 });
 
 export function BenchmarkDashboard() {
-  const [prompt, setPrompt] = useState('What is retrieval-augmented generation and how does StreamRAG differ from Naive RAG?');
+  const [prompt, setPrompt] = useState('');
   const [naiveAnswer, setNaiveAnswer] = useState('');
   const [streamAnswer, setStreamAnswer] = useState('');
   const [naiveLatency, setNaiveLatency] = useState<number | null>(null);
