@@ -15,129 +15,131 @@ AI Agent comparing Naive RAG and StreamRAG in a full-stack production system wit
 
 ## Architecture
 
-### Backend Architecture
+### System Flow
 
 ```mermaid
-graph TB
+flowchart LR
     subgraph Frontend["Frontend (Next.js 14)"]
-        UI["Landing Page<br/>(/)"]
-        Benchmark["Benchmark Dashboard<br/>(/benchmark)"]
-        API["API Client<br/>(lib/api.ts)"]
+        Landing["/ (Landing)"]
+        Dash["/benchmark (Dashboard)"]
+        Client["lib/api.ts"]
+    end
+    subgraph API["FastAPI Backend"]
+        Routes["routes.py"]
+        Container["container.py (DI)"]
+        Graph["orchestrator.py (StateGraph)"]
+        Guard["guardrails.py"]
+        LLM["llm.py (ChatOpenAI)"]
+        RAG(["RAG Pipelines"])
+        Tools(["Tool Registry"])
+        Skills(["SkillRegistry"])
+        Mem(["Memory (SQLite)"])
+        Vec(["Vector Store (Qdrant)"])
+    end
+    subgraph External["External"]
+        Q["Qdrant"]
+        OAI["OpenAI / OpenRouter"]
+        FS["documents/"]
     end
 
-    subgraph Backend["Backend (FastAPI)"]
-        Routes["API Routes<br/>(routes.py)"]
-        Container["DI Container<br/>(container.py)"]
-
-        subgraph Agent["Agent Layer (LangGraph)"]
-            Graph["StateGraph<br/>(orchestrator.py)"]
-            Nodes["Nodes:<br/>• initialize<br/>• retrieve<br/>• run_tools<br/>• run_skills<br/>• build_context<br/>• generate"]
-            Memory["MemorySaver<br/>(checkpointer)"]
-        end
-
-        subgraph RAG["RAG Pipelines"]
-            Naive["Naive RAG<br/>retrieve → generate<br/>(sequential)"]
-            Stream["StreamRAG<br/>parallel retrieve +<br/>streaming generate"]
-        end
-
-        subgraph Retrieval["Retrieval Layer"]
-            Embeddings["Embeddings<br/>• OpenAI text-embedding-3-small<br/>• Deterministic (fallback)"]
-            VectorDB["Vector Store<br/>• Qdrant (prod)<br/>• InMemory (test)"]
-            Chunker["Chunker<br/>(sentence-aware,<br/>overlap)"]
-            Reranker["HybridReranker<br/>(cosine + keyword)"]
-        end
-
-        subgraph Guardrails["Guardrails & Hallucination Reduction"]
-            Safety["ContentSafetyChecker<br/>(toxicity + injection)"]
-            PII["PIIRedactor<br/>(email, SSN, API keys)"]
-            Citation["CitationVerifier<br/>(sentence-level grounding)"]
-            Relevance["RelevanceFilter<br/>(score < 0.15 dropped)"]
-        end
-
-        subgraph Tools["Tool Registry"]
-            Calc["CalculatorTool<br/>(safe eval with<br/>AST parsing)"]
-            DT["DateTimeTool"]
-            Weather["WeatherTool<br/>(Open-Meteo API)"]
-            Web["WebSearchTool"]
-            DocSearch["DocumentSearchTool"]
-            KnowSearch["KnowledgeSearchTool"]
-        end
-
-        subgraph Skills["Skills (Sub-agents)"]
-            Research["ResearchSkill<br/>(multi-step analysis)"]
-            SkillReg["SkillRegistry"]
-        end
-
-        subgraph Memory["Memory & Context"]
-            ConvStore["ConversationStore<br/>(SQLite - persistent<br/>connection pool)"]
-            CtxMgr["ContextManager<br/>(token budget,<br/>history trimming)"]
-        end
-
-        subgraph LLM["LLM Providers"]
-            LangChainClient["LangChainChatClient<br/>(ChatOpenAI wrapper)"]
-            ORClient["OpenRouterClient<br/>(direct httpx)"]
-            EchoClient["EchoLLMClient<br/>(test fallback)"]
-        end
-    end
-
-    subgraph Monitoring["Observability"]
-        LS["LangSmith<br/>(@traceable decorators)"]
-        LG["LangGraph<br/>(StateGraph tracing)"]
-    end
-
-    subgraph Data["Data Stores"]
-        Qdrant["Qdrant v1.11.4<br/>(vector database)"]
-        PG["PostgreSQL 16<br/>(available)"]
-        FS["File System<br/>(documents/)"]
-    end
-
-    UI --> Routes
-    Benchmark --> Routes
-    API --> Routes
+    Landing --> Routes
+    Dash --> Routes
     Routes --> Container
-    Container --> Agent
-    Container --> RAG
-    Container --> Retrieval
-    Container --> Tools
-    Container --> Skills
-    Container --> Memory
-    Container --> LLM
-    Container --> Guardrails
-
-    Graph --> Nodes
-    Nodes -. "input guardrails" .-> Guardrails
-    Nodes -. "output guardrails & grounding" .-> Guardrails
-    Graph --> Memory
-    Naive --> Graph
-    Stream --> Graph
-    Embeddings --> LangChainClient
-    Embeddings --> EchoClient
-    LangChainClient --> ORClient
-    LangChainClient --> EchoClient
-
-    VectorDB --> Qdrant
-    VectorDB --> FS
-    Research --> LangChainClient
-    Research --> EchoClient
-
-    Routes -- "@traceable" --> LS
-    Graph -- "LangGraph tracing" --> LG
-    ConvStore --> PG
+    Container --> Graph
+    Graph --> Guard
+    Graph --> RAG
+    Graph --> Mem
+    Graph --> Tools
+    Graph --> Skills
+    Graph --> LLM
+    RAG --> Vec
+    Vec --> Q
+    Graph --> Vec
+    LLM --> OAI
 
     classDef frontend fill:#1e293b,stroke:#64748b,color:#f8fafc
-    classDef backend fill:#1e1b4b,stroke:#6366f1,color:#f8fafc
+    classDef api fill:#1e1b4b,stroke:#6366f1,color:#f8fafc
+    classDef ext fill:#0f172a,stroke:#f59e0b,color:#f8fafc
+    class Frontend,Landing,Dash,Client frontend
+    class API,Routes,Container,Graph,Guard,LLM,RAG,Tools,Skills,Mem,Vec api
+    class External,Q,OAI,FS ext
+```
+
+### Backend Component Diagram
+
+```mermaid
+flowchart TB
+    subgraph Core["Core Layer"]
+        Config["config.py<br/>(AppSettings)"]
+        Container["container.py<br/>(DI)"]
+        Middleware["middleware.py<br/>(X-Request-ID)"]
+    end
+
+    subgraph Routes["API Layer"]
+        Chat["POST /api/chat"]
+        Stream["POST /api/chat/stream"]
+        Bench["POST /api/benchmark"]
+        Ingest["POST /api/documents/ingest"]
+        Health["GET /api/health"]
+    end
+
+    subgraph Agent["Agent Layer"]
+        Init["initialize<br/>• load history<br/>• input guardrail"]
+        Retrieve["retrieve<br/>• vector search<br/>• rerank + filter"]
+        Tools["run_tools<br/>• keyword dispatch"]
+        Skills["run_skills<br/>• sub-agent dispatch"]
+        Ctx["build_context<br/>• token budget<br/>• prompt assembly"]
+        Gen["generate<br/>• LLM call<br/>• output guardrail<br/>• grounding check"]
+    end
+
+    subgraph Guard["Guardrails"]
+        Safety["ContentSafety<br/>(toxicity + injection)"]
+        PII["PII Redaction<br/>(email, SSN, key)"]
+        Cite["CitationVerifier<br/>(grounding score)"]
+        Rel["RelevanceFilter<br/>(score < 0.15)"]
+    end
+
+    subgraph Storage["Storage"]
+        SQL["ConversationStore<br/>(SQLite)"]
+        Qdrant["VectorStore<br/>(Qdrant)"]
+        MemStore["InMemoryStore<br/>(test)"]
+    end
+
+    subgraph LLM["LLM Providers"]
+        LC["LangChainChatClient<br/>(ChatOpenAI)"]
+        OR["OpenRouterClient<br/>(httpx)"]
+        Echo["EchoLLMClient<br/>(mock)"]
+    end
+
+    Routes --> Container
+    Container --> Agent
+    Init --> Safety
+    Init --> PII
+    Retrieve --> Rel
+    Gen --> Cite
+    Gen --> Safety
+    Gen --> OR
+    Gen --> LC
+    Gen --> Echo
+    Ctx --> SQL
+    Retrieve --> Qdrant
+    Retrieve --> MemStore
+    Tools --> Calc
+    Tools --> Weather
+    Tools --> Web
+
+    classDef core fill:#1e1b4b,stroke:#6366f1,color:#f8fafc
+    classDef route fill:#312e81,stroke:#818cf8,color:#f8fafc
+    classDef agent fill:#1e293b,stroke:#64748b,color:#f8fafc
+    classDef guard fill:#4a0e4e,stroke:#e879f9,color:#f8fafc
     classDef storage fill:#0f172a,stroke:#f59e0b,color:#f8fafc
     classDef llm fill:#0c0a1e,stroke:#a855f7,color:#f8fafc
-    classDef observability fill:#064e3b,stroke:#34d399,color:#f8fafc
-    classDef guardrails fill:#4a0e4e,stroke:#e879f9,color:#f8fafc
-    classDef data fill:#451a03,stroke:#fb923c,color:#f8fafc
-    class Frontend,UI,Benchmark,API frontend
-    class Backend,Routes,Container,Agent,Graph,Nodes,Memory,RAG,Naive,Stream,Retrieval,Embeddings,VectorDB,Chunker,Reranker,Tools,Calc,DT,Weather,Web,DocSearch,KnowSearch,Skills,Research,SkillReg,ConvStore,CtxMgr backend
-    class Guardrails,Safety,PII,Citation,Relevance guardrails
-    class LLM,LangChainClient,ORClient,EchoClient llm
-    class Monitoring,LS,LG observability
-    class Data,Qdrant,PG,FS data
-    class Qdrant,PG,FS storage
+    class Core,Config,Container,Middleware core
+    class Routes,Chat,Stream,Bench,Ingest,Health route
+    class Agent,Init,Retrieve,Tools,Skills,Ctx,Gen agent
+    class Guard,Safety,PII,Cite,Rel guard
+    class Storage,SQL,Qdrant,MemStore storage
+    class LLM,LC,OR,Echo llm
 ```
 
 ### Frontend Architecture

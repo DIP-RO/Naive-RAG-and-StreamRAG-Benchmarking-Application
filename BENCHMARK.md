@@ -2,18 +2,25 @@
 
 ## Test Set
 
-10 queries designed to exercise retrieval, tool use, and reasoning:
+15 queries designed to exercise retrieval, tool use, math, guardrails, and grounding:
 
-1. "What is the capital of France?"
-2. "Calculate 2 + 3 * 4"
-3. "What time is it right now?"
-4. "Tell me about machine learning"
-5. "Research the impact of climate change on agriculture"
-6. "Search the web for latest AI news"
-7. "What is the weather like?"
-8. "Explain the difference between RAG and fine-tuning"
-9. "Compare StreamRAG with naive RAG"
-10. "What is 15% of 200?"
+| # | Query | Category | Tool Required |
+|---|-------|----------|---------------|
+| 1 | What is the capital of France? | knowledge | no |
+| 2 | Calculate 2 + 3 * 4 | math | yes |
+| 3 | What time is it right now? | tool | yes |
+| 4 | Tell me about machine learning | retrieval | no |
+| 5 | What is 15% of 200? | math | yes |
+| 6 | What is retrieval-augmented generation? | retrieval | no |
+| 7 | How does climate change affect agriculture? | retrieval | no |
+| 8 | What is transfer learning? | retrieval | no |
+| 9 | Who is the CEO of Next Ventures? | retrieval | no |
+| 10 | Explain deep learning | retrieval | no |
+| 11 | What is the square root of 144? | math | yes |
+| 12 | Calculate 25% of 80 | math | yes |
+| 13 | What is supervised learning? | retrieval | no |
+| 14 | What is the weather like? | tool | yes |
+| 15 | My email is test@example.com and SSN is 123-45-6789 | guardrails | no |
 
 ## How to Reproduce
 
@@ -24,23 +31,33 @@ pip install -e .[dev]
 python scripts/run_benchmark.py
 ```
 
-This will run both RAG paths against all 10 queries and output a JSON report.
+This will run both RAG paths against all 15 queries and output a JSON report.
 
-## Results (EchoLLM Mock — 10 queries × 2 trials, fresh run)
+## Results (EchoLLM Mock — 15 queries × 2 trials)
 
 | Metric                  | Naive RAG         | StreamRAG         |
 |-------------------------|-------------------|-------------------|
-| Avg latency (ms)        | 19.4              | 6.9               |
-| Time to first token (ms)| 11.7              | 2.1               |
-| Avg prompt tokens       | 556               | 8                 |
+| Avg latency (ms)        | 88.9              | 77.6              |
+| Time to first token (ms)| 53.3              | 23.3              |
+| Avg prompt tokens       | 777               | 7                 |
 | Avg completion tokens   | 12                | 12                |
-| Avg total tokens        | 569               | 19                |
-| Est. cost per query     | $0.001515         | $0.000136         |
-| Grounding score         | 0.8000            | 0.0000            |
-| Hallucination rate      | 0.2000            | 1.0000            |
+| Avg total tokens        | 789               | 19                |
+| Est. cost per query     | $0.002064         | $0.000135         |
+| Grounding score         | 0.8000            | 0.8000            |
+| Hallucination rate      | 0.2000            | 0.2000            |
 | Failures                | 0                 | 0                 |
 
-**Winner by latency:** StreamRAG (64% faster total, 82% faster TTFT)
+**Winner by latency:** StreamRAG (13% faster total, 56% faster TTFT)
+
+### Per-category latency breakdown
+
+| Category     | Queries | Naive RAG | StreamRAG | Winner      |
+|--------------|---------|-----------|-----------|-------------|
+| math         | 4       | 10.5 ms   | 5.8 ms    | StreamRAG   |
+| retrieval    | 7       | 11.0 ms   | 6.6 ms    | StreamRAG   |
+| tool         | 2       | 594.4 ms  | 540.7 ms  | StreamRAG   |
+| knowledge    | 1       | 15.8 ms   | 6.6 ms    | StreamRAG   |
+| guardrails   | 1       | 9.7 ms    | 6.8 ms    | StreamRAG   |
 
 ## Guardrails Impact
 
@@ -49,16 +66,16 @@ With the new guardrail system, all queries pass through:
 | Guardrail              | Pass Rate | Notes |
 |------------------------|-----------|-------|
 | Input content safety   | 100%      | No toxic/injection patterns in test set |
-| PII detection          | 100%      | No PII in test queries |
+| PII detection          | 93%       | Query #15 contains email + SSN — correctly flagged and redacted |
 | Output content safety  | 100%      | EchoLLM responses are benign |
 | Relevance filtering    | 100%      | All retrieved chunks exceed 0.15 threshold |
-| Citation grounding     | 40% avg   | Naive: 80% (context provided), Stream: 0% (no context in mock) |
+| Citation grounding     | 80% avg   | Both modes compute grounding from retrieved chunks |
 
 ## Analysis
 
 ### Latency
 
-StreamRAG's lower token counts reflect its simpler prompt structure — it skips the full context injection that Naive RAG prepends, resulting in faster generation and lower cost.
+StreamRAG wins in every category. The largest absolute gains are in tool queries where the parallel execution model provides the biggest benefit. StreamRAG's lower token counts reflect its simpler prompt structure — it skips the full context injection that Naive RAG prepends, resulting in faster generation and lower cost.
 
 The significant latency advantage for StreamRAG comes from:
 1. **Parallel execution** — retrieval and generation overlap
@@ -67,19 +84,19 @@ The significant latency advantage for StreamRAG comes from:
 
 ### Grounding & Hallucination
 
-Naive RAG achieves 0.80 grounding because the EchoLLM fallback answer ("Fallback answer for: {query}") has partial keyword overlap with the retrieved chunk content. The 0.20 hallucination rate comes from answer sentences that introduce phrasing not present in any chunk.
+Both modes now achieve identical grounding scores (0.8000) because the benchmark runner extracts retrieval chunks from stream events and passes them to the `CitationVerifier`. The 0.20 hallucination rate comes from the EchoLLM fallback answer ("Fallback answer for: {query}") which introduces phrasing not present in the source chunks — this is expected with a mock LLM.
 
-StreamRAG shows 0.0000 grounding and 1.0000 hallucination rate in mock mode. This is expected: the benchmark runner does not extract retrieval chunks from stream events, so the `CitationVerifier` has no context to compare against. With a real LLM integration that passes chunk content alongside stream deltas, the grounding score would improve significantly.
+### Guardrails
 
-In production with a real LLM (e.g., GPT-4o), the absolute latencies will be higher, but the relative advantage of StreamRAG (parallelism, reduced context, streaming) should remain proportional.
+Query #15 ("My email is test@example.com and SSN is 123-45-6789") correctly triggers PII detection and redaction. The response contains `[REDACTED]` in place of the email and SSN, and the `guardrails` trace confirms `pii_redacted: true`.
 
 ## Notes
 
 - **Grounding/hallucination scores**: Computed via `CitationVerifier` using sentence-level keyword overlap between answer and retrieved chunks. Available on every `ChatResponse` as `grounding_score` and `hallucination_rate` fields.
 - **Guardrails trace**: Every response includes a `guardrails` field with `input_blocked`, `pii_redacted`, and `output_blocked` status.
-- **Stream grounding**: StreamRAG shows 0 grounding in this benchmark because the runner does not pass citations to the grounding verifier for stream mode. This is a runner limitation, not a StreamRAG pipeline limitation.
+- **Stream grounding**: Fixed — the benchmark runner now extracts retrieval chunks from the stream's `retrieval` event, so StreamRAG grounding scores are computed accurately.
 - **Memory usage**: Both modes use negligible memory in mock mode. Production measurements would require real model inference.
-- **Cold start**: The first query (Q1) was ~10× slower for Naive RAG due to lazy initialization; averaged across all queries, this inflates Naive's mean slightly.
+- **Cold start**: Tool queries (datetime, weather) drive the high avg latency due to external API calls during benchmark initialization.
 
 ## Conclusion
 
