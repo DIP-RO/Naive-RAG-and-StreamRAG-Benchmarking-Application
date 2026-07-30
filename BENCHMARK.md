@@ -42,10 +42,10 @@ Requires the backend server running at `http://localhost:8000`.
 The system uses a **6-level fallback chain** to maximize uptime:
 
 ```
-Gemini (key 1) → Gemini (key 2) → Gemini (key 3) → Gemini (key 4) → Gemma/OpenRouter → EchoLLMClient (mock)
+Gemini×5 → Gemma/OpenRouter → EchoLLMClient (7-level fallback)
 ```
 
-If the primary Gemini key hits a rate limit, it transparently retries with the next key. If all 4 Gemini keys fail, it falls back to Gemma (google/gemma-4-31b-it:free) via OpenRouter. If that also fails, the deterministic EchoLLMClient mock returns the best keyword-matched chunk or a no-data message.
+This was designed because **all LLM providers used here are free-tier**, which hit daily rate limits rapidly. Rather than failing, the system cascades through 5 Gemini keys, then Gemma via OpenRouter, then finally the EchoLLMClient mock. Each hop catches errors transparently, ensuring the app works without interruption in demos and CI even when all upstream APIs are throttled.
 
 ## Results (Gemini + Fallback — 22 queries × 2 modes)
 
@@ -110,7 +110,7 @@ All 22 queries return the expected answer or fallback. Key improvements:
 
 ## Notes
 
-- **Gemini fallback chain**: The 6-level fallback (Gemini×4 → Gemma → EchoLLM) ensures zero failures even when free-tier API rate limits are hit. Each level retries transparently within the GoogleGenAIClient.
+- **Gemini fallback chain**: The 7-level fallback (Gemini×5 → Gemma → EchoLLM) was built because all providers are free-tier and quota-limited. It ensures zero failures even when all upstream APIs return 429/403. Each level times out in 5s and moves to the next key transparently.
 - **EchoLLM mock**: The final fallback is the deterministic `EchoLLMClient` which returns the best keyword-overlapping chunk or a no-data fallback. This guarantees the system always returns a coherent response.
 - **Hash-based embedding**: Vector search uses a deterministic hash for reproducibility. This means semantic retrieval quality is limited — chunks are matched by keyword overlap after a randomized hash ranking.
 - **Benchmark command**: Run `python benchmark/run.py` from the `benchmark/` directory with the backend server running.

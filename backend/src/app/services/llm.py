@@ -171,6 +171,7 @@ class GoogleGenAIClient:
     fallback_api_key: str | None = None
     fallback_api_key_2: str | None = None
     fallback_api_key_3: str | None = None
+    fallback_api_key_4: str | None = None
     default_model: str = "gemini-flash-latest"
 
     def _all_keys(self) -> list[str]:
@@ -181,6 +182,8 @@ class GoogleGenAIClient:
             keys.append(self.fallback_api_key_2)
         if self.fallback_api_key_3:
             keys.append(self.fallback_api_key_3)
+        if self.fallback_api_key_4:
+            keys.append(self.fallback_api_key_4)
         return keys
 
     async def _try_generate(
@@ -208,7 +211,7 @@ class GoogleGenAIClient:
                 return text, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-        raise last_error  # type: ignore[misc]
+        raise last_error
 
     async def _try_stream(
         self, api_key: str, messages: list[ChatMessage], model: str, max_tokens: int
@@ -240,7 +243,7 @@ class GoogleGenAIClient:
                 return
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-        raise last_error  # type: ignore[misc]
+        raise last_error
 
     async def stream_text(
         self, messages: list[ChatMessage], *, model: str, max_tokens: int
@@ -495,6 +498,7 @@ class LLMFactory:
                 fallback_api_key=settings.google_api_key_fallback,
                 fallback_api_key_2=settings.google_api_key_fallback_2,
                 fallback_api_key_3=settings.google_api_key_fallback_3,
+                fallback_api_key_4=settings.google_api_key_fallback_4,
             )
         if provider == "openrouter" and settings.openrouter_api_key:
             return LangChainChatClient(
