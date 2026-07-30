@@ -47,7 +47,7 @@ graph TB
             Reranker["HybridReranker<br/>(cosine + keyword)"]
         end
 
-            subgraph Guardrails["Guardrails & Hallucination Reduction"]
+        subgraph Guardrails["Guardrails & Hallucination Reduction"]
             Safety["ContentSafetyChecker<br/>(toxicity + injection)"]
             PII["PIIRedactor<br/>(email, SSN, API keys)"]
             Citation["CitationVerifier<br/>(sentence-level grounding)"]
@@ -105,7 +105,8 @@ graph TB
     Container --> Guardrails
 
     Graph --> Nodes
-    Graph --> Guardrails
+    Nodes -. "input guardrails" .-> Guardrails
+    Nodes -. "output guardrails & grounding" .-> Guardrails
     Graph --> Memory
     Naive --> Graph
     Stream --> Graph

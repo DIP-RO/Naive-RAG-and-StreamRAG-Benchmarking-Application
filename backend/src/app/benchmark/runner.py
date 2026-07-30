@@ -60,16 +60,21 @@ class BenchmarkRunner:
                         )
                     ):
                         events.append(event)
-                    final_event = events[-1]
-                    payload = json.loads(final_event)
-                    answer_text = payload["payload"]["answer"]
+                    final_event = json.loads(events[-1])
+                    answer_text = final_event["payload"]["answer"]
                     usage = {
                         "prompt_tokens": count_tokens(request.message),
                         "completion_tokens": count_tokens(answer_text),
                         "total_tokens": count_tokens(request.message) + count_tokens(answer_text),
                     }
                     answers.append(answer_text)
-                    citations_list.append([])
+                    stream_chunks: list[RetrievalChunk] = []
+                    for raw in events:
+                        ev = json.loads(raw)
+                        if ev.get("type") == "retrieval":
+                            stream_chunks = [RetrievalChunk(**c) for c in ev["payload"].get("chunks", [])]
+                            break
+                    citations_list.append(stream_chunks)
                 latencies.append((perf_counter() - start) * 1000.0)
                 all_usage.append(usage)
             avg_latency = sum(latencies) / len(latencies)
