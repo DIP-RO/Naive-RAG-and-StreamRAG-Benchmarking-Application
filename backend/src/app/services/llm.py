@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re as _re
 from collections.abc import AsyncIterator
@@ -182,14 +183,6 @@ class GoogleGenAIClient:
             keys.append(self.fallback_api_key_3)
         return keys
 
-    def _build_llm(self, model: str, max_tokens: int) -> ChatGoogleGenerativeAI:
-        return ChatGoogleGenerativeAI(
-            api_key=self.api_key,
-            model=model,
-            temperature=0.2,
-            max_output_tokens=max_tokens,
-        )
-
     async def _try_generate(
         self, api_key: str, messages: list[ChatMessage], model: str, max_tokens: int
     ) -> str:
@@ -197,7 +190,7 @@ class GoogleGenAIClient:
             api_key=api_key, model=model, temperature=0.2, max_output_tokens=max_tokens
         )
         lc_messages = _to_langchain(messages)
-        response = await llm.ainvoke(lc_messages)
+        response = await asyncio.wait_for(llm.ainvoke(lc_messages), timeout=5.0)
         if isinstance(response.content, str):
             return response.content
         if isinstance(response.content, list):
@@ -235,8 +228,8 @@ class GoogleGenAIClient:
             if text:
                 yield text
 
-    async def stream_text(
-        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    async def _stream_with_timeout(
+        self, messages: list[ChatMessage], model: str, max_tokens: int
     ) -> AsyncIterator[str]:
         keys = self._all_keys()
         last_error: Exception | None = None
@@ -248,6 +241,17 @@ class GoogleGenAIClient:
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
         raise last_error  # type: ignore[misc]
+
+    async def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]:
+        agen = self._stream_with_timeout(messages, model, max_tokens)
+        try:
+            while True:
+                t = await asyncio.wait_for(agen.__anext__(), timeout=15.0)
+                yield t
+        except (StopAsyncIteration, TimeoutError):
+            return
 
 
 @dataclass
