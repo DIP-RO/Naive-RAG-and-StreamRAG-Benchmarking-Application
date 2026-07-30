@@ -48,9 +48,9 @@ class AppSettings(BaseSettings):
 
     max_context_tokens: int = 14_000
     max_output_tokens: int = 2_000
-    naive_top_k: int = 15
-    stream_initial_top_k: int = 15
-    stream_final_top_k: int = 8
+    naive_top_k: int = 30
+    stream_initial_top_k: int = 30
+    stream_final_top_k: int = 30
     retrieval_timeout_s: float = 8.0
     request_timeout_s: float = 30.0
 

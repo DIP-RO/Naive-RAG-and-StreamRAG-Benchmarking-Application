@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re as _re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -177,6 +178,8 @@ class EchoLLMClient:
         ]
         system_text = all_system[-1] if all_system else ""
 
+
+
         answer = None
         for line in system_text.split("\n"):
             line = line.strip()
@@ -206,7 +209,6 @@ class EchoLLMClient:
                 content = line[colon + 1:].strip()
                 if not content:
                     continue
-                import re as _re
                 qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
                 ct = {t.strip("?,.;:!\"'()[]{}-") for t in content.lower().split()} - {""}
                 tt = {w for w in _re.split(r"[^a-z0-9]+", title.lower()) if w}
@@ -214,8 +216,6 @@ class EchoLLMClient:
                 tss = len(qt & tt)
                 candidates.append((cs, tss, title, content))
             if candidates:
-                candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                best_cs, best_tss, best_title, best_content = candidates[0]
                 _stop = {"the","a","an","is","are","was","were","be","been","being",
                          "have","has","had","do","does","did","will","would","shall",
                          "should","may","might","can","could","of","in","on","at",
@@ -226,13 +226,38 @@ class EchoLLMClient:
                          "who","whom","when","where","why","how","all","each","every",
                          "both","few","more","most","some","any","no","nor","too",
                          "very","just","also","as","than","then","now"}
-                import re as _re
                 qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
                 meaningful = qt - _stop
-                if meaningful and best_cs >= 2:
-                    ct = {t.strip("?,.;:!\"'()[]{}-") for t in best_content.lower().split()} - {""}
-                    tt = {w for w in _re.split(r"[^a-z0-9]+", best_title.lower()) if w}
-                    if (meaningful & ct) or (meaningful & tt):
+                if meaningful:
+                    scored: list[tuple[int, str, str]] = []
+                    for _, _, cand_title, cand_content in candidates:
+                        ct = {t.strip("?,.;:!\"'()[]{}-") for t in cand_content.lower().split()} - {""}
+                        tt = {w for w in _re.split(r"[^a-z0-9]+", cand_title.lower()) if w}
+                        exact_matched = meaningful & ct
+                        title_matched = meaningful & tt
+                        fuzzy_ct = ct - exact_matched
+                        fuzzy_tt = tt - title_matched
+                        extra = 0
+                        for h in fuzzy_ct:
+                            if len(h) < 3:
+                                continue
+                            for n in meaningful:
+                                if len(n) >= 3 and h in n and n not in exact_matched:
+                                    extra += 1
+                                    break
+                        for h in fuzzy_tt:
+                            if len(h) < 3:
+                                continue
+                            for n in meaningful:
+                                if len(n) >= 3 and h in n and n not in title_matched:
+                                    extra += 1
+                                    break
+                        if len(exact_matched) + len(title_matched) + extra >= 2:
+                            score = extra * 3 + len(exact_matched) * 2 + len(title_matched)
+                            scored.append((score, cand_title, cand_content))
+                    if scored:
+                        scored.sort(key=lambda x: x[0], reverse=True)
+                        best_title, best_content = scored[0][1], scored[0][2]
                         answer = f"[{best_title}] {best_content[:300]}"
 
         if not answer:

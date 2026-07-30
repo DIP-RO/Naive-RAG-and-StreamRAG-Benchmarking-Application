@@ -199,16 +199,6 @@ export function BenchmarkDashboard() {
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <MetricBadge
-              label="Naive Tokens"
-              value={naiveRecord ? `${naiveRecord.total_tokens}` : '-'}
-              icon={<ChartColumn className="h-4 w-4" />}
-            />
-            <MetricBadge
-              label="Stream Tokens"
-              value={streamRecord ? `${streamRecord.total_tokens}` : '-'}
-              icon={<ChartColumn className="h-4 w-4" />}
-            />
-            <MetricBadge
               label="Naive Grounding"
               value={naiveRecord && naiveRecord.grounding_score != null ? `${(naiveRecord.grounding_score * 100).toFixed(0)}%` : '-'}
               icon={<Target className="h-4 w-4" />}
@@ -219,6 +209,30 @@ export function BenchmarkDashboard() {
               icon={<Target className="h-4 w-4" />}
               good={streamRecord && naiveRecord && streamRecord.grounding_score != null && naiveRecord.grounding_score != null ? streamRecord.grounding_score >= naiveRecord.grounding_score : undefined}
             />
+            <MetricBadge
+              label="Naive Hallucination"
+              value={naiveRecord && naiveRecord.hallucination_rate != null ? `${(naiveRecord.hallucination_rate * 100).toFixed(0)}%` : '-'}
+              icon={<CircleX className="h-4 w-4" />}
+              good={naiveRecord && naiveRecord.hallucination_rate != null ? naiveRecord.hallucination_rate === 0 : undefined}
+            />
+            <MetricBadge
+              label="Stream Hallucination"
+              value={streamRecord && streamRecord.hallucination_rate != null ? `${(streamRecord.hallucination_rate * 100).toFixed(0)}%` : '-'}
+              icon={<CircleX className="h-4 w-4" />}
+              good={streamRecord && streamRecord.hallucination_rate != null ? streamRecord.hallucination_rate === 0 : undefined}
+            />
+            <MetricBadge
+              label="Naive Tokens"
+              value={naiveRecord ? `${naiveRecord.total_tokens}` : '-'}
+              icon={<ChartColumn className="h-4 w-4" />}
+            />
+            <MetricBadge
+              label="Stream Tokens"
+              value={streamRecord ? `${streamRecord.total_tokens}` : '-'}
+              icon={<ChartColumn className="h-4 w-4" />}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <MetricBadge
               label="Naive Failures"
               value={naiveRecord ? `${naiveRecord.failures}` : '-'}
