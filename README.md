@@ -2,9 +2,9 @@
 
 AI Agent comparing Naive RAG and StreamRAG in a full-stack production system with guardrails, hallucination reduction, and observability.
 
-> ⚠️ **No paid APIs, no local LLM — pure free-tier resilience**
+> ⚠️ **No paid APIs, no local LLM, no paid coding tools — 100% manual build**
 >
-> I built this entire system **without any paid API key or a GPU to run a local LLM**. All providers (Google Gemini, OpenRouter) are free-tier, which means:
+> I built this entire system **without any paid API key, without a GPU to run a local LLM, and without paid coding assistants** (no Cursor, no Claude Agentic, no Copilot). Every line of code was written manually. All providers (Google Gemini, OpenRouter) are free-tier, which means:
 > - **Daily quota exhausted** after ~20 requests per key
 > - **Frequent 429/403 errors** during demos and testing
 > - **No fallback to a local model** (no GPU available)
