@@ -163,15 +163,23 @@ class OpenRouterClient:
 
 @dataclass
 class EchoLLMClient:
-    """Deterministic fallback for local development and tests."""
+    """Deterministic fallback for local development and tests.
+    Returns tool results when present in the context, otherwise echoes the user query."""
 
     async def generate_text(
         self, messages: list[ChatMessage], *, model: str, max_tokens: int
     ) -> tuple[str, dict[str, int]]:
-        user_message = next(
-            (message.content for message in reversed(messages) if message.role == "user"), ""
+        system_msg = next(
+            (message.content for message in messages if message.role == "system"), ""
         )
-        answer = f"Fallback answer for: {user_message}"
+        tool_results = self._extract_tool_results(system_msg)
+        if tool_results:
+            answer = tool_results
+        else:
+            user_message = next(
+                (message.content for message in reversed(messages) if message.role == "user"), ""
+            )
+            answer = f"Fallback answer for: {user_message}"
         return answer, {
             "prompt_tokens": sum(len(message.content) for message in messages) // 4,
             "completion_tokens": len(answer) // 4,
@@ -184,6 +192,18 @@ class EchoLLMClient:
         answer, _ = await self.generate_text(messages, model=model, max_tokens=max_tokens)
         for token in answer.split():
             yield token + " "
+
+    @staticmethod
+    def _extract_tool_results(system_text: str) -> str | None:
+        results: list[str] = []
+        for line in system_text.split("\n"):
+            line = line.strip()
+            if line.startswith("[tool:") and "]" in line:
+                colon = line.index("]")
+                content = line[colon + 1:].strip()
+                if content:
+                    results.append(content)
+        return "\n".join(results) if results else None
 
 
 class LLMFactory:
