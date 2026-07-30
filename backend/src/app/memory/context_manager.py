@@ -32,7 +32,9 @@ class ContextManager:
         if summary:
             messages.append(ChatMessage(role="system", content=f"Conversation summary:\n{summary}"))
         if retrieved_context:
-            messages.append(ChatMessage(role="system", content=f"Retrieved evidence:\n{retrieved_context}"))
+            messages.append(
+                ChatMessage(role="system", content=f"Retrieved evidence:\n{retrieved_context}")
+            )
 
         trimmed_history = self._trim_history(history, budget, model=model)
         messages.extend(trimmed_history)

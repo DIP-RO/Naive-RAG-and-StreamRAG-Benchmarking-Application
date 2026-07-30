@@ -12,7 +12,9 @@ class ResearchSkill:
     llm: LLMClient
     name: str = "research"
     description: str = "Multi-step research analysis using retrieval and synthesis"
-    triggers: list[str] = field(default_factory=lambda: ["research", "analyze", "investigate", "deep dive", "tell me about"])
+    triggers: list[str] = field(
+        default_factory=lambda: ["research", "analyze", "investigate", "deep dive", "tell me about"]
+    )
     model: str = "gpt-4.1"
 
     async def execute(self, query: str, context: dict[str, str]) -> SkillResult:
@@ -25,7 +27,11 @@ class ResearchSkill:
             ),
         )
         context_text = context.get("retrieved_context", "")
-        context_msg = ChatMessage(role="system", content=f"Available evidence:\n{context_text}") if context_text else None
+        context_msg = (
+            ChatMessage(role="system", content=f"Available evidence:\n{context_text}")
+            if context_text
+            else None
+        )
         user_msg = ChatMessage(role="user", content=query)
 
         messages = [analysis_prompt]
@@ -37,5 +43,9 @@ class ResearchSkill:
         return SkillResult(
             name=self.name,
             output=answer,
-            metadata={"model": self.model, "prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)},
+            metadata={
+                "model": self.model,
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            },
         )

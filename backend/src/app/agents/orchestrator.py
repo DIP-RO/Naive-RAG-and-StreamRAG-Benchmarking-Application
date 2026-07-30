@@ -22,7 +22,7 @@ from app.models.schemas import (
 )
 from app.retrieval.reranker import HybridReranker
 from app.retrieval.vector_store import VectorStoreProtocol
-from app.services.guardrails import GuardrailResult, GuardrailService
+from app.services.guardrails import GuardrailService
 from app.services.llm import LLMClient
 from app.services.tools import ToolName, ToolRegistry
 from app.skills.registry import SkillRegistry
@@ -104,10 +104,16 @@ class AgentOrchestrator:
         conversation_id = state["conversation_id"]
         guardrail_result = self.deps.guardrails.check_input(request.message)
         pii_detected = bool(self.deps.guardrails.detect_pii(request.message))
-        safe_message = self.deps.guardrails.redact_pii(request.message) if pii_detected else request.message
+        safe_message = (
+            self.deps.guardrails.redact_pii(request.message) if pii_detected else request.message
+        )
         await self.deps.conversation_store.initialize()
-        history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
-        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=safe_message))
+        history = request.history or await self.deps.conversation_store.fetch_history(
+            conversation_id
+        )
+        await self.deps.conversation_store.append(
+            conversation_id, ChatMessage(role="user", content=safe_message)
+        )
         return {
             "history": history,
             "safe_user_message": safe_message,
@@ -119,7 +125,9 @@ class AgentOrchestrator:
 
     async def _node_retrieve(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
-        chunks = await self.deps.vector_store.search(request.message, limit=self.deps.settings.naive_top_k)
+        chunks = await self.deps.vector_store.search(
+            request.message, limit=self.deps.settings.naive_top_k
+        )
         reranked = self.deps.reranker.rerank(request.message, chunks)
         filtered = self.deps.guardrails.filter_chunks(reranked)
         return {"retrieved_chunks": chunks, "reranked": filtered}
@@ -135,7 +143,9 @@ class AgentOrchestrator:
     async def _node_build_context(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         safe_message = state.get("safe_user_message", request.message)
-        context_text = self._build_context_text(state["reranked"], state["tool_results"], state["skill_results"])
+        context_text = self._build_context_text(
+            state["reranked"], state["tool_results"], state["skill_results"]
+        )
         summary = await self.deps.conversation_store.get_summary(state["conversation_id"])
         prompt_messages = self.deps.context_manager.build_prompt_messages(
             history=state["history"],
@@ -143,12 +153,17 @@ class AgentOrchestrator:
             retrieved_context=context_text,
             user_message=safe_message,
             budget=ContextBudget(
-                max_context_tokens=request.max_context_tokens or self.deps.settings.max_context_tokens,
+                max_context_tokens=request.max_context_tokens
+                or self.deps.settings.max_context_tokens,
                 reserved_output_tokens=self.deps.settings.max_output_tokens,
             ),
             model=request.model or self.deps.settings.default_llm_model,
         )
-        return {"context_text": context_text, "summary": summary.summary if summary else None, "prompt_messages": prompt_messages}
+        return {
+            "context_text": context_text,
+            "summary": summary.summary if summary else None,
+            "prompt_messages": prompt_messages,
+        }
 
     async def _node_generate(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
@@ -159,9 +174,14 @@ class AgentOrchestrator:
         )
         guardrail_result = self.deps.guardrails.check_output(answer_text)
         citation_result = self.deps.guardrails.compute_grounding(answer_text, state["reranked"])
-        await self.deps.conversation_store.append(state["conversation_id"], ChatMessage(role="assistant", content=answer_text))
+        await self.deps.conversation_store.append(
+            state["conversation_id"], ChatMessage(role="assistant", content=answer_text)
+        )
         if count_tokens(state["context_text"]) > 2_000:
-            await self.deps.conversation_store.store_summary(state["conversation_id"], self._summarize_locally(state["history"], request.message, answer_text))
+            await self.deps.conversation_store.store_summary(
+                state["conversation_id"],
+                self._summarize_locally(state["history"], request.message, answer_text),
+            )
         return {
             "answer_text": answer_text,
             "usage": usage,
@@ -234,8 +254,11 @@ class AgentOrchestrator:
             mode=request.mode,
             answer=result.get("answer_text", ""),
             citations=reranked,
-            tool_calls=self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results],
-            usage=result.get("usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
+            tool_calls=self._fmt_tool_results(tool_results)
+            + [{"skill": r.name, "output": r.output} for r in skill_results],
+            usage=result.get(
+                "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            ),
             latency_ms=latency_ms,
             request_id=request_id,
             grounding_score=grounding_score,
@@ -243,7 +266,11 @@ class AgentOrchestrator:
             confidence_score=grounding_score,
             flagged=result.get("output_flagged", False),
             guardrails=guardrails_trace,
-            trace={"retrieved_chunks": len(reranked), "tools": [r.name.value for r in tool_results if not isinstance(r, Exception)], "skills": [r.name for r in skill_results]},
+            trace={
+                "retrieved_chunks": len(reranked),
+                "tools": [r.name.value for r in tool_results if not isinstance(r, Exception)],
+                "skills": [r.name for r in skill_results],
+            },
         )
 
     @traceable(run_type="chain", name="AgentOrchestrator.stream_answer")
@@ -254,12 +281,33 @@ class AgentOrchestrator:
         guardrail_result = self.deps.guardrails.check_input(request.message)
         safe_message = self.deps.guardrails.redact_pii(request.message)
         await self.deps.conversation_store.initialize()
-        history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
-        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=safe_message))
-        yield StreamEvent(type="started", conversation_id=conversation_id, request_id=request_id, payload={"mode": request.mode.value, "input_flagged": not guardrail_result.passed, "pii_redacted": safe_message != request.message}).model_dump_json()
+        history = request.history or await self.deps.conversation_store.fetch_history(
+            conversation_id
+        )
+        await self.deps.conversation_store.append(
+            conversation_id, ChatMessage(role="user", content=safe_message)
+        )
+        yield StreamEvent(
+            type="started",
+            conversation_id=conversation_id,
+            request_id=request_id,
+            payload={
+                "mode": request.mode.value,
+                "input_flagged": not guardrail_result.passed,
+                "pii_redacted": safe_message != request.message,
+            },
+        ).model_dump_json()
 
-        initial_task = asyncio.create_task(self.deps.vector_store.search(request.message, limit=self.deps.settings.stream_initial_top_k))
-        broad_task = asyncio.create_task(self.deps.vector_store.search(request.message, limit=self.deps.settings.stream_final_top_k))
+        initial_task = asyncio.create_task(
+            self.deps.vector_store.search(
+                request.message, limit=self.deps.settings.stream_initial_top_k
+            )
+        )
+        broad_task = asyncio.create_task(
+            self.deps.vector_store.search(
+                request.message, limit=self.deps.settings.stream_final_top_k
+            )
+        )
         tool_task = asyncio.create_task(self._maybe_run_tools(request.message))
         skill_task = asyncio.create_task(self.deps.skills.run_matching(request.message, context={}))
 
@@ -267,14 +315,24 @@ class AgentOrchestrator:
             initial_chunks = await initial_task
             initial_reranked = self.deps.reranker.rerank(request.message, initial_chunks)
         except Exception as exc:  # noqa: BLE001
-            yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"error": f"Retrieval failed: {exc}"}).model_dump_json()
+            yield StreamEvent(
+                type="error",
+                conversation_id=conversation_id,
+                request_id=request_id,
+                payload={"error": f"Retrieval failed: {exc}"},
+            ).model_dump_json()
             return
 
         try:
             tool_results = await tool_task
         except Exception as exc:  # noqa: BLE001
             tool_results = []
-            yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"warning": f"Tool execution failed: {exc}"}).model_dump_json()
+            yield StreamEvent(
+                type="error",
+                conversation_id=conversation_id,
+                request_id=request_id,
+                payload={"warning": f"Tool execution failed: {exc}"},
+            ).model_dump_json()
 
         try:
             skill_results = await skill_task
@@ -290,7 +348,8 @@ class AgentOrchestrator:
             retrieved_context=initial_context,
             user_message=safe_message,
             budget=ContextBudget(
-                max_context_tokens=request.max_context_tokens or self.deps.settings.max_context_tokens,
+                max_context_tokens=request.max_context_tokens
+                or self.deps.settings.max_context_tokens,
                 reserved_output_tokens=self.deps.settings.max_output_tokens,
             ),
             model=request.model or self.deps.settings.default_llm_model,
@@ -315,9 +374,19 @@ class AgentOrchestrator:
                 if buffer_size > _STREAM_BUFFER_LIMIT:
                     answer_parts = [answer_parts[-1]]
                     buffer_size = len(answer_parts[-1])
-                yield StreamEvent(type="delta", conversation_id=conversation_id, request_id=request_id, payload={"text": delta}).model_dump_json()
+                yield StreamEvent(
+                    type="delta",
+                    conversation_id=conversation_id,
+                    request_id=request_id,
+                    payload={"text": delta},
+                ).model_dump_json()
         except Exception as exc:  # noqa: BLE001
-            yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"error": f"Generation failed: {exc}"}).model_dump_json()
+            yield StreamEvent(
+                type="error",
+                conversation_id=conversation_id,
+                request_id=request_id,
+                payload={"error": f"Generation failed: {exc}"},
+            ).model_dump_json()
             return
 
         broad_chunks: list[RetrievalChunk] = []
@@ -330,7 +399,11 @@ class AgentOrchestrator:
                     type="context_update",
                     conversation_id=conversation_id,
                     request_id=request_id,
-                    payload={"new_chunks": [chunk.model_dump() for chunk in broad_reranked[len(initial_reranked):]]},
+                    payload={
+                        "new_chunks": [
+                            chunk.model_dump() for chunk in broad_reranked[len(initial_reranked) :]
+                        ]
+                    },
                 ).model_dump_json()
         except Exception:  # noqa: BLE001, S110
             pass
@@ -339,7 +412,9 @@ class AgentOrchestrator:
         output_guardrail = self.deps.guardrails.check_output(final_answer)
         citation_chunks = broad_reranked if broad_reranked else initial_reranked
         citation_result = self.deps.guardrails.compute_grounding(final_answer, citation_chunks)
-        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="assistant", content=final_answer))
+        await self.deps.conversation_store.append(
+            conversation_id, ChatMessage(role="assistant", content=final_answer)
+        )
         latency_ms = (perf_counter() - started) * 1000.0
         yield StreamEvent(
             type="completed",
@@ -348,7 +423,8 @@ class AgentOrchestrator:
             payload={
                 "answer": final_answer,
                 "latency_ms": latency_ms,
-                "tool_calls": self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results],
+                "tool_calls": self._fmt_tool_results(tool_results)
+                + [{"skill": r.name, "output": r.output} for r in skill_results],
                 "grounding_score": citation_result.grounding_score,
                 "hallucination_rate": citation_result.hallucination_rate,
                 "flagged": not output_guardrail.passed,
@@ -372,7 +448,11 @@ class AgentOrchestrator:
         return await self.deps.tools.run_many(requested, context={"query": message})
 
     @staticmethod
-    def _build_context_text(chunks: list[RetrievalChunk], tool_results: list[Any], skill_results: list[Any] | None = None) -> str:
+    def _build_context_text(
+        chunks: list[RetrievalChunk],
+        tool_results: list[Any],
+        skill_results: list[Any] | None = None,
+    ) -> str:
         parts: list[str] = []
         for chunk in chunks:
             parts.append(f"[{chunk.title}] {chunk.content}")
@@ -385,7 +465,11 @@ class AgentOrchestrator:
 
     @staticmethod
     def _fmt_tool_results(results: list[Any]) -> list[dict[str, Any]]:
-        return [r.metadata | {"tool": r.name.value, "output": r.output} for r in results if not isinstance(r, Exception)]
+        return [
+            r.metadata | {"tool": r.name.value, "output": r.output}
+            for r in results
+            if not isinstance(r, Exception)
+        ]
 
     def _summarize_locally(self, history: list[ChatMessage], user_message: str, answer: str) -> str:
         recent = history[-6:]

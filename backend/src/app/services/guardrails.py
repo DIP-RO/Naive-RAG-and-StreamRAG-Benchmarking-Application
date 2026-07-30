@@ -6,7 +6,6 @@ from typing import Any
 
 from app.models.schemas import RetrievalChunk
 
-
 TOXIC_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(kill|murder|suicide|self-harm)\b", re.IGNORECASE),
     re.compile(r"\b(hate|racist|sexist|slur)\b", re.IGNORECASE),
@@ -26,7 +25,12 @@ PII_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("email", re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")),
     ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
     ("phone", re.compile(r"\b\d{3}[-.)]\d{3}[-.]?\d{4}\b")),
-    ("api_key", re.compile(r"\b(sk-[a-zA-Z0-9]{20,}|[A-Za-z0-9]{32,}|api[-_]?key[-_]?[=:]\s*\S+)\b", re.IGNORECASE)),
+    (
+        "api_key",
+        re.compile(
+            r"\b(sk-[a-zA-Z0-9]{20,}|[A-Za-z0-9]{32,}|api[-_]?key[-_]?[=:]\s*\S+)\b", re.IGNORECASE
+        ),
+    ),
     ("ip_address", re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")),
     ("credit_card", re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b")),
 ]
@@ -52,18 +56,30 @@ class ContentSafetyChecker:
         for pattern in TOXIC_PATTERNS:
             match = pattern.search(text)
             if match:
-                return GuardrailResult(passed=False, reason="Blocked by content safety", details={"matched_pattern": match.group(), "pattern_type": "toxic"})
+                return GuardrailResult(
+                    passed=False,
+                    reason="Blocked by content safety",
+                    details={"matched_pattern": match.group(), "pattern_type": "toxic"},
+                )
         for pattern in INJECTION_PATTERNS:
             match = pattern.search(text)
             if match:
-                return GuardrailResult(passed=False, reason="Possible prompt injection detected", details={"matched_pattern": match.group(), "pattern_type": "injection"})
+                return GuardrailResult(
+                    passed=False,
+                    reason="Possible prompt injection detected",
+                    details={"matched_pattern": match.group(), "pattern_type": "injection"},
+                )
         return GuardrailResult(passed=True)
 
     def check_output(self, text: str) -> GuardrailResult:
         for pattern in TOXIC_PATTERNS:
             match = pattern.search(text)
             if match:
-                return GuardrailResult(passed=False, reason="Output blocked by content safety", details={"matched_pattern": match.group(), "pattern_type": "toxic"})
+                return GuardrailResult(
+                    passed=False,
+                    reason="Output blocked by content safety",
+                    details={"matched_pattern": match.group(), "pattern_type": "toxic"},
+                )
         return GuardrailResult(passed=True)
 
 

@@ -29,7 +29,9 @@ class StoredDocument:
 
 
 class QdrantVectorStore(VectorStoreProtocol):
-    def __init__(self, client: AsyncQdrantClient, collection: str, embeddings: EmbeddingProvider) -> None:
+    def __init__(
+        self, client: AsyncQdrantClient, collection: str, embeddings: EmbeddingProvider
+    ) -> None:
         self.client = client
         self.collection = collection
         self.embeddings = embeddings
@@ -85,7 +87,11 @@ class QdrantVectorStore(VectorStoreProtocol):
                     content=str(payload.get("content", "")),
                     score=float(result.score or 0.0),
                     source="qdrant",
-                    metadata={key: value for key, value in payload.items() if key not in {"chunk_id", "document_id", "title", "content"}},
+                    metadata={
+                        key: value
+                        for key, value in payload.items()
+                        if key not in {"chunk_id", "document_id", "title", "content"}
+                    },
                 )
             )
         return chunks

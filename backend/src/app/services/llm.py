@@ -41,11 +41,13 @@ def _extract_usage(response: Any) -> dict[str, int]:
 
 
 class LLMClient(Protocol):
-    async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
-        ...
+    async def generate_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> tuple[str, dict[str, int]]: ...
 
-    def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
-        ...
+    def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]: ...
 
 
 @dataclass
@@ -68,14 +70,18 @@ class LangChainChatClient:
             kwargs["base_url"] = self.base_url
         return ChatOpenAI(**kwargs)
 
-    async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
+    async def generate_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> tuple[str, dict[str, int]]:
         llm = self._build_llm(model, max_tokens)
         lc_messages = _to_langchain(messages)
         response = await llm.ainvoke(lc_messages)
         usage = _extract_usage(response)
         return response.content if isinstance(response.content, str) else "", usage
 
-    async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
+    async def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]:
         llm = self._build_llm(model, max_tokens)
         lc_messages = _to_langchain(messages)
         async for chunk in llm.astream(lc_messages):
@@ -93,7 +99,9 @@ class OpenRouterClient:
     app_name: str = "Applied AI Engineer Assessment"
     referer: str | None = None
 
-    async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
+    async def generate_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> tuple[str, dict[str, int]]:
         payload: dict[str, Any] = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
@@ -107,7 +115,9 @@ class OpenRouterClient:
         }
         if self.referer:
             headers["HTTP-Referer"] = self.referer
-        response = await SHARED_HTTP_CLIENT.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
+        response = await SHARED_HTTP_CLIENT.post(
+            f"{self.base_url}/chat/completions", headers=headers, json=payload
+        )
         response.raise_for_status()
         data = response.json()
         choice = data["choices"][0]["message"]
@@ -118,7 +128,9 @@ class OpenRouterClient:
             "total_tokens": int(usage_payload.get("total_tokens", 0)),
         }
 
-    async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
+    async def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]:
         payload: dict[str, Any] = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
@@ -133,7 +145,9 @@ class OpenRouterClient:
         }
         if self.referer:
             headers["HTTP-Referer"] = self.referer
-        async with SHARED_HTTP_CLIENT.stream("POST", f"{self.base_url}/chat/completions", headers=headers, json=payload) as response:
+        async with SHARED_HTTP_CLIENT.stream(
+            "POST", f"{self.base_url}/chat/completions", headers=headers, json=payload
+        ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line or not line.startswith("data: "):
@@ -151,12 +165,22 @@ class OpenRouterClient:
 class EchoLLMClient:
     """Deterministic fallback for local development and tests."""
 
-    async def generate_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> tuple[str, dict[str, int]]:
-        user_message = next((message.content for message in reversed(messages) if message.role == "user"), "")
+    async def generate_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> tuple[str, dict[str, int]]:
+        user_message = next(
+            (message.content for message in reversed(messages) if message.role == "user"), ""
+        )
         answer = f"Fallback answer for: {user_message}"
-        return answer, {"prompt_tokens": sum(len(message.content) for message in messages) // 4, "completion_tokens": len(answer) // 4, "total_tokens": 0}
+        return answer, {
+            "prompt_tokens": sum(len(message.content) for message in messages) // 4,
+            "completion_tokens": len(answer) // 4,
+            "total_tokens": 0,
+        }
 
-    async def stream_text(self, messages: list[ChatMessage], *, model: str, max_tokens: int) -> AsyncIterator[str]:
+    async def stream_text(
+        self, messages: list[ChatMessage], *, model: str, max_tokens: int
+    ) -> AsyncIterator[str]:
         answer, _ = await self.generate_text(messages, model=model, max_tokens=max_tokens)
         for token in answer.split():
             yield token + " "

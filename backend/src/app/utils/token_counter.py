@@ -15,7 +15,7 @@ def _encoding(model: str):
     try:
         return tiktoken.encoding_for_model(model)
     except Exception:  # noqa: BLE001
-            return tiktoken.get_encoding("cl100k_base")
+        return tiktoken.get_encoding("cl100k_base")
 
 
 def count_tokens(text: str, model: str = "gpt-4.1") -> int:

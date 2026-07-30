@@ -58,12 +58,15 @@ class AppContainer:
             elif hasattr(resource, "close"):
                 await resource.close()
         from app.utils.http_client import SHARED_HTTP_CLIENT
+
         await SHARED_HTTP_CLIENT.aclose()
 
 
 async def build_container(settings: AppSettings) -> AppContainer:
     embeddings = (
-        OpenAIEmbeddingProvider(api_key=settings.openai_api_key, model=settings.default_embedding_model)
+        OpenAIEmbeddingProvider(
+            api_key=settings.openai_api_key, model=settings.default_embedding_model
+        )
         if settings.openai_api_key
         else DeterministicEmbeddingProvider()
     )
@@ -75,10 +78,15 @@ async def build_container(settings: AppSettings) -> AppContainer:
         try:
             qdrant_client = AsyncQdrantClient(url=settings.qdrant_url, timeout=2.0)
             qdrant_store = QdrantVectorStore(qdrant_client, settings.qdrant_collection, embeddings)
-            await qdrant_store.ensure_collection(vector_size=getattr(embeddings, "dimensions", 1536))
+            await qdrant_store.ensure_collection(
+                vector_size=getattr(embeddings, "dimensions", 1536)
+            )
             vector_store = qdrant_store
         except Exception:  # noqa: BLE001
-            logger.warning("qdrant_unavailable_using_in_memory_store", extra={"qdrant_url": settings.qdrant_url})
+            logger.warning(
+                "qdrant_unavailable_using_in_memory_store",
+                extra={"qdrant_url": settings.qdrant_url},
+            )
             vector_store = InMemoryVectorStore(embeddings)
 
     conversation_store = ConversationStore(settings.sqlite_path)
@@ -111,7 +119,9 @@ async def build_container(settings: AppSettings) -> AppContainer:
     )
     naive_pipeline = NaiveRagPipeline(orchestrator=orchestrator)
     stream_pipeline = StreamRagPipeline(orchestrator=orchestrator)
-    benchmark_runner = BenchmarkRunner(naive=naive_pipeline, stream=stream_pipeline, guardrails=guardrails)
+    benchmark_runner = BenchmarkRunner(
+        naive=naive_pipeline, stream=stream_pipeline, guardrails=guardrails
+    )
     document_ingestion = DocumentIngestionService(Chunker(), vector_store)
 
     return AppContainer(

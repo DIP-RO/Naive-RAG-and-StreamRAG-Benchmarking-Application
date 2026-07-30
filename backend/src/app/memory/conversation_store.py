@@ -61,7 +61,13 @@ class ConversationStore:
         conn = await self._get_conn()
         await conn.execute(
             "INSERT INTO conversation_messages (conversation_id, role, content, tool_name, metadata) VALUES (?, ?, ?, ?, ?)",
-            (conversation_id, message.role, message.content, message.tool_name, json.dumps(message.metadata)),
+            (
+                conversation_id,
+                message.role,
+                message.content,
+                message.tool_name,
+                json.dumps(message.metadata),
+            ),
         )
         await conn.commit()
 

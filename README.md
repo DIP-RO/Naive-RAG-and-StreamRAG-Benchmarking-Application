@@ -1,6 +1,6 @@
-# Applied AI Engineer Assessment
+# Naive RAG vs StreamRAG — Benchmarking Application
 
-AI Agent comparing Naive RAG and StreamRAG in one full-stack production system.
+AI Agent comparing Naive RAG and StreamRAG in a full-stack production system with guardrails, hallucination reduction, and observability.
 
 ## Deliverables Checklist
 
@@ -45,6 +45,13 @@ graph TB
             VectorDB["Vector Store<br/>• Qdrant (prod)<br/>• InMemory (test)"]
             Chunker["Chunker<br/>(sentence-aware,<br/>overlap)"]
             Reranker["HybridReranker<br/>(cosine + keyword)"]
+        end
+
+            subgraph Guardrails["Guardrails & Hallucination Reduction"]
+            Safety["ContentSafetyChecker<br/>(toxicity + injection)"]
+            PII["PIIRedactor<br/>(email, SSN, API keys)"]
+            Citation["CitationVerifier<br/>(sentence-level grounding)"]
+            Relevance["RelevanceFilter<br/>(score < 0.15 dropped)"]
         end
 
         subgraph Tools["Tool Registry"]
@@ -95,8 +102,10 @@ graph TB
     Container --> Skills
     Container --> Memory
     Container --> LLM
+    Container --> Guardrails
 
     Graph --> Nodes
+    Graph --> Guardrails
     Graph --> Memory
     Naive --> Graph
     Stream --> Graph
@@ -119,9 +128,11 @@ graph TB
     classDef storage fill:#0f172a,stroke:#f59e0b,color:#f8fafc
     classDef llm fill:#0c0a1e,stroke:#a855f7,color:#f8fafc
     classDef observability fill:#064e3b,stroke:#34d399,color:#f8fafc
+    classDef guardrails fill:#4a0e4e,stroke:#e879f9,color:#f8fafc
     classDef data fill:#451a03,stroke:#fb923c,color:#f8fafc
     class Frontend,UI,Benchmark,API frontend
     class Backend,Routes,Container,Agent,Graph,Nodes,Memory,RAG,Naive,Stream,Retrieval,Embeddings,VectorDB,Chunker,Reranker,Tools,Calc,DT,Weather,Web,DocSearch,KnowSearch,Skills,Research,SkillReg,ConvStore,CtxMgr backend
+    class Guardrails,Safety,PII,Citation,Relevance guardrails
     class LLM,LangChainClient,ORClient,EchoClient llm
     class Monitoring,LS,LG observability
     class Data,Qdrant,PG,FS data
@@ -178,8 +189,11 @@ graph TB
 | Vector DB | Qdrant (with in-memory fallback for tests) |
 | Memory | SQLite via aiosqlite |
 | LLM | OpenAI / OpenRouter (with EchoLLMClient fallback) |
-| Packaging | Docker Compose (backend + frontend + Qdrant + Postgres) |
+| Guardrails | Content safety, PII redaction, prompt injection detection |
+| Hallucination Reduction | Citation verifier, relevance threshold, confidence scoring |
+| Packaging | Docker Compose (backend + frontend + Qdrant) |
 | CI | GitHub Actions (ruff, mypy, pytest, Next.js build) |
+| Observability | LangSmith tracing on all tests |
 
 ## Features
 
@@ -192,6 +206,10 @@ graph TB
 - **Sub-agent / Skill**: ResearchSkill for multi-step analysis
 - **Benchmarking**: automated comparison of both paths on latency, tokens, cost, grounding
 - **Side-by-side UI**: compare both RAG responses simultaneously
+- **Input Guardrails**: content safety (toxicity, prompt injection detection) and PII redaction (emails, SSNs, phones, API keys, IPs, credit cards) at API and graph entry points
+- **Output Guardrails**: post-generation toxicity check and citation grounding verification with per-sentence support scoring
+- **Hallucination Reduction**: citation verifier computes `grounding_score` and `hallucination_rate` by measuring keyword overlap between LLM output and retrieved chunks; low-relevance chunks filtered via `score_threshold=0.15`
+- **Confidence Scoring**: `confidence_score` field on every `ChatResponse`, derived from grounding verification results
 
 ## How to Run
 
@@ -251,7 +269,7 @@ pytest
 │   │   ├── models/      # Pydantic schemas
 │   │   ├── naiverag/    # Naive RAG pipeline
 │   │   ├── retrieval/   # Vector store, embeddings, chunker, reranker
-│   │   ├── services/    # LLM client, tools, document ingestion
+│   │   ├── services/    # LLM client, tools, guardrails, document ingestion
 │   │   ├── skills/      # Sub-agent / skill system
 │   │   ├── streamrag/   # StreamRAG pipeline
 │   │   ├── tests/       # Pytest test suite
@@ -288,6 +306,12 @@ Zero-dependency, file-based persistence that works everywhere. Good enough for s
 ### Why async throughout?
 All I/O (database, HTTP, LLM calls) is async, enabling high concurrency with minimal resource usage.
 
+### Why heuristic guardrails instead of an LLM-based guard?
+Heuristic guardrails (regex patterns for toxicity, injection, PII) have zero latency, zero cost, and no external dependency. They run on every request before the LLM is invoked, providing a fast first line of defense. An LLM-based guard classifier would be more accurate but would add latency and cost proportional to every query. For production, we recommend adding a dedicated guardrail model (e.g., NeMo Guardrails, Guardrails AI) as a second pass.
+
+### Why keyword-overlap for citation grounding?
+Computing grounding by measuring keyword overlap between LLM output sentences and retrieved chunk text is fast (no model inference), deterministic, and interpretable. A more accurate approach would use NLI-based entailment or BERTScore, but those introduce latency and cost. The keyword-overlap method catches the most common hallucination pattern — the LLM introducing facts not present in the source material — without requiring an external model.
+
 ## Limitations
 
 - **Small document set**: 5 example documents; not representative of production-scale knowledge bases
@@ -296,6 +320,8 @@ All I/O (database, HTTP, LLM calls) is async, enabling high concurrency with min
 - **StreamRAG approximated**: Text-only SSE streaming (not voice). Retrieval starts before generation completes
 - **No real reranking**: Uses hybrid score (cosine + keyword overlap), not a cross-encoder model
 - **No persistence for benchmark runs**: Results are in-memory; not yet stored in Postgres for trend analysis
+- **Heuristic guardrails**: Regex-based content safety and PII detection may have false positives/negatives; an LLM-based guard classifier would be more accurate
+- **Keyword-overlap grounding**: Citation verification uses token overlap, not semantic entailment; may miss factual errors that use the same vocabulary as source text
 
 ## Future Improvements
 
@@ -308,3 +334,6 @@ All I/O (database, HTTP, LLM calls) is async, enabling high concurrency with min
 - Persistent benchmark results in Postgres for trend analysis
 - PDF/HTML document ingestion pipeline
 - Authentication and rate limiting
+- LLM-based guardrail classifier (NeMo Guardrails / Guardrails AI) as second-pass verification
+- NLI-based entailment scoring for citation grounding (higher accuracy than keyword overlap)
+- Structured output enforcement (JSON Schema) for LLM responses to reduce hallucination surface

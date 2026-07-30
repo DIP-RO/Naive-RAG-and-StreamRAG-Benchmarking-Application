@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 def _init_langsmith(settings: AppSettings) -> None:
     if settings.langchain_api_key:
-        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true" if settings.langchain_tracing_v2 else "false")
+        os.environ.setdefault(
+            "LANGCHAIN_TRACING_V2", "true" if settings.langchain_tracing_v2 else "false"
+        )
         os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
         os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
         logger.info("langsmith_tracing_enabled project=%s", settings.langchain_project)

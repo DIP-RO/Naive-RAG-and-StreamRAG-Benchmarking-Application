@@ -22,8 +22,7 @@ class ToolResult:
 class Tool(Protocol):
     name: ToolName
 
-    async def execute(self, *, query: str, context: dict[str, Any]) -> ToolResult:
-        ...
+    async def execute(self, *, query: str, context: dict[str, Any]) -> ToolResult: ...
 
 
 class CalculatorTool:
@@ -33,17 +32,28 @@ class CalculatorTool:
         try:
             expression = self._extract_expression(query)
             value = self._safe_eval(expression)
-            return ToolResult(name=self.name, output=str(value), metadata={"expression": expression})
+            return ToolResult(
+                name=self.name, output=str(value), metadata={"expression": expression}
+            )
         except Exception as exc:  # noqa: BLE001
-            return ToolResult(name=self.name, output=f"Error: {exc}", metadata={"expression": query, "error": str(exc)})
+            return ToolResult(
+                name=self.name,
+                output=f"Error: {exc}",
+                metadata={"expression": query, "error": str(exc)},
+            )
 
     @staticmethod
     def _extract_expression(text: str) -> str:
-        percentage_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+        percentage_match = re.search(
+            r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE
+        )
         if percentage_match:
             val, total = float(percentage_match.group(1)), float(percentage_match.group(2))
             return f"{val}*{total}/100"
-        match = re.search(r"[-+]?\d+(?:\.\d+)?\s*[\+\-\*/%]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*/%]\s*\d+(?:\.\d+)?)*", text)
+        match = re.search(
+            r"[-+]?\d+(?:\.\d+)?\s*[\+\-\*/%]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*/%]\s*\d+(?:\.\d+)?)*",
+            text,
+        )
         if match:
             expr = match.group(0).replace("%", "/100*")
             return expr
@@ -116,7 +126,11 @@ class WeatherTool:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(
                 "https://api.open-meteo.com/v1/forecast",
-                params={"latitude": 37.7749, "longitude": -122.4194, "current": "temperature_2m,wind_speed_10m"},
+                params={
+                    "latitude": 37.7749,
+                    "longitude": -122.4194,
+                    "current": "temperature_2m,wind_speed_10m",
+                },
             )
             response.raise_for_status()
         return ToolResult(name=self.name, output=response.text, metadata={"provider": "open-meteo"})
@@ -131,7 +145,11 @@ class WebSearchTool:
 
     async def execute(self, *, query: str, context: dict[str, Any]) -> ToolResult:
         if not self.endpoint:
-            return ToolResult(name=self.name, output=f"Web search not configured for: {query}", metadata={"configured": False})
+            return ToolResult(
+                name=self.name,
+                output=f"Web search not configured for: {query}",
+                metadata={"configured": False},
+            )
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(self.endpoint, params={"q": query}, headers=headers)
@@ -147,16 +165,22 @@ class ToolRegistry:
     def available_tools(self) -> list[ToolName]:
         return list(self._tools.keys())
 
-    async def run(self, name: ToolName, query: str, context: dict[str, Any] | None = None) -> ToolResult:
+    async def run(
+        self, name: ToolName, query: str, context: dict[str, Any] | None = None
+    ) -> ToolResult:
         tool = self._tools[name]
         return await tool.execute(query=query, context=context or {})
 
-    async def run_many(self, requests: list[tuple[ToolName, str]], context: dict[str, Any] | None = None) -> list[ToolResult]:
+    async def run_many(
+        self, requests: list[tuple[ToolName, str]], context: dict[str, Any] | None = None
+    ) -> list[ToolResult]:
         results: list[ToolResult] = []
         for name, query in requests:
             try:
                 result = await self.run(name, query, context=context)
                 results.append(result)
             except Exception as exc:  # noqa: BLE001
-                results.append(ToolResult(name=name, output=f"Error: {exc}", metadata={"error": str(exc)}))
+                results.append(
+                    ToolResult(name=name, output=f"Error: {exc}", metadata={"error": str(exc)})
+                )
         return results

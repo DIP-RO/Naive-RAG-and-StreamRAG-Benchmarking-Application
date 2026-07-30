@@ -15,5 +15,4 @@ class Skill(Protocol):
     name: str
     description: str
 
-    async def execute(self, query: str, context: dict[str, Any]) -> SkillResult:
-        ...
+    async def execute(self, query: str, context: dict[str, Any]) -> SkillResult: ...

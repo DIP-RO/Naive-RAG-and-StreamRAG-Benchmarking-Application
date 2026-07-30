@@ -38,7 +38,12 @@ class BenchmarkRunner:
                 start = perf_counter()
                 if mode == RagMode.naive:
                     result = await self.naive.run(
-                        request=ChatRequest(message=request.message, history=request.history, mode=mode, model=request.model)
+                        request=ChatRequest(
+                            message=request.message,
+                            history=request.history,
+                            mode=mode,
+                            model=request.model,
+                        )
                     )
                     answer_text = result.answer
                     usage = result.usage
@@ -47,13 +52,22 @@ class BenchmarkRunner:
                 else:
                     events: list[str] = []
                     async for event in self.stream.run(
-                        ChatRequest(message=request.message, history=request.history, mode=mode, model=request.model)
+                        ChatRequest(
+                            message=request.message,
+                            history=request.history,
+                            mode=mode,
+                            model=request.model,
+                        )
                     ):
                         events.append(event)
                     final_event = events[-1]
                     payload = json.loads(final_event)
                     answer_text = payload["payload"]["answer"]
-                    usage = {"prompt_tokens": count_tokens(request.message), "completion_tokens": count_tokens(answer_text), "total_tokens": count_tokens(request.message) + count_tokens(answer_text)}
+                    usage = {
+                        "prompt_tokens": count_tokens(request.message),
+                        "completion_tokens": count_tokens(answer_text),
+                        "total_tokens": count_tokens(request.message) + count_tokens(answer_text),
+                    }
                     answers.append(answer_text)
                     citations_list.append([])
                 latencies.append((perf_counter() - start) * 1000.0)
@@ -63,14 +77,19 @@ class BenchmarkRunner:
             avg_completion = sum(u.get("completion_tokens", 0) for u in all_usage) // len(all_usage)
             avg_total = avg_prompt + avg_completion
             cost = avg_prompt * INPUT_COST_PER_TOKEN + avg_completion * OUTPUT_COST_PER_TOKEN
-            trial_scores = [self.guardrails.compute_grounding(answers[i], citations_list[i]) for i in range(request.trials)]
+            trial_scores = [
+                self.guardrails.compute_grounding(answers[i], citations_list[i])
+                for i in range(request.trials)
+            ]
             avg_grounding = sum(s.grounding_score for s in trial_scores) / len(trial_scores)
             avg_hallucination = sum(s.hallucination_rate for s in trial_scores) / len(trial_scores)
             records.append(
                 BenchmarkRecord(
                     mode=mode,
                     latency_ms=avg_latency,
-                    time_to_first_token_ms=avg_latency * 0.3 if mode == RagMode.stream else avg_latency * 0.6,
+                    time_to_first_token_ms=avg_latency * 0.3
+                    if mode == RagMode.stream
+                    else avg_latency * 0.6,
                     prompt_tokens=avg_prompt,
                     completion_tokens=avg_completion,
                     total_tokens=avg_total,

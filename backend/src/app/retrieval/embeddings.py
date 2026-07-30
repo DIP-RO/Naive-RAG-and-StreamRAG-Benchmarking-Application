@@ -10,8 +10,7 @@ from app.utils.http_client import SHARED_HTTP_CLIENT
 
 
 class EmbeddingProvider(Protocol):
-    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        ...
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]: ...
 
 
 @dataclass

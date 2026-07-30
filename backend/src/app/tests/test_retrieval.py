@@ -14,8 +14,22 @@ async def test_in_memory_store_upsert_and_search() -> None:
     provider = DeterministicEmbeddingProvider(dimensions=128)
     store = InMemoryVectorStore(provider)
     chunks = [
-        Chunk(chunk_id="1", document_id="d1", title="Doc1", content="The weather is sunny today", chunk_index=0, metadata={}),
-        Chunk(chunk_id="2", document_id="d1", title="Doc1", content="Machine learning is fun", chunk_index=1, metadata={}),
+        Chunk(
+            chunk_id="1",
+            document_id="d1",
+            title="Doc1",
+            content="The weather is sunny today",
+            chunk_index=0,
+            metadata={},
+        ),
+        Chunk(
+            chunk_id="2",
+            document_id="d1",
+            title="Doc1",
+            content="Machine learning is fun",
+            chunk_index=1,
+            metadata={},
+        ),
     ]
     await store.upsert_chunks(chunks)
     results = await store.search("weather", limit=5)
@@ -39,9 +53,30 @@ async def test_in_memory_store_ranking() -> None:
     provider = DeterministicEmbeddingProvider(dimensions=128)
     store = InMemoryVectorStore(provider)
     chunks = [
-        Chunk(chunk_id="a", document_id="d1", title="Doc1", content="Python is a programming language", chunk_index=0, metadata={}),
-        Chunk(chunk_id="b", document_id="d1", title="Doc1", content="Java is also a language", chunk_index=1, metadata={}),
-        Chunk(chunk_id="c", document_id="d1", title="Doc1", content="Weather forecast for London today", chunk_index=2, metadata={}),
+        Chunk(
+            chunk_id="a",
+            document_id="d1",
+            title="Doc1",
+            content="Python is a programming language",
+            chunk_index=0,
+            metadata={},
+        ),
+        Chunk(
+            chunk_id="b",
+            document_id="d1",
+            title="Doc1",
+            content="Java is also a language",
+            chunk_index=1,
+            metadata={},
+        ),
+        Chunk(
+            chunk_id="c",
+            document_id="d1",
+            title="Doc1",
+            content="Weather forecast for London today",
+            chunk_index=2,
+            metadata={},
+        ),
     ]
     await store.upsert_chunks(chunks)
     results = await store.search("programming language", limit=3)

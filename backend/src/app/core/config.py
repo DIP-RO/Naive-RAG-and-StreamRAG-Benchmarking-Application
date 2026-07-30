@@ -29,7 +29,9 @@ class AppSettings(BaseSettings):
     google_api_key: str | None = None
     openrouter_api_key: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("OPENROUTER_API_KEY", "API_KEY_OPEN_ROUTER", "GEMMA_API_KEY_OPEN_ROUTER"),
+        validation_alias=AliasChoices(
+            "OPENROUTER_API_KEY", "API_KEY_OPEN_ROUTER", "GEMMA_API_KEY_OPEN_ROUTER"
+        ),
     )
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_app_name: str = "Applied AI Engineer Assessment"
