@@ -8,8 +8,8 @@ AI Agent comparing Naive RAG and StreamRAG in a full-stack production system wit
 - [x] **One-command setup**: `docker compose up --build`
 - [x] **README** with architecture, setup, and design decisions
 - [x] **Benchmark scripts**: `python benchmark/run.py`
-- [x] **Test dataset**: `benchmark/test_set.json` (10 queries with expected answers)
-- [x] **Example documents**: `documents/` (5 files for RAG ingestion)
+- [x] **Test dataset**: `benchmark/test_set.json` (22 queries with expected answers)
+- [x] **Example documents**: `documents/` (10 files for RAG ingestion)
 - [x] **Benchmark report**: `BENCHMARK.md`
 - [ ] **Video**: 5-min walkthrough (intro, architecture, demo, tradeoffs)
 
@@ -211,7 +211,7 @@ graph TB
 - **Side-by-side UI**: compare both RAG responses simultaneously
 - **Input Guardrails**: content safety (toxicity, prompt injection detection) and PII redaction (emails, SSNs, phones, API keys, IPs, credit cards) at API and graph entry points
 - **Output Guardrails**: post-generation toxicity check and citation grounding verification with per-sentence support scoring
-- **Hallucination Reduction**: citation verifier computes `grounding_score` and `hallucination_rate` by measuring keyword overlap between LLM output and retrieved chunks; low-relevance chunks filtered via `score_threshold=0.15`
+- **Hallucination Reduction**: citation verifier computes `grounding_score` and `hallucination_rate` by measuring keyword overlap between LLM output and retrieved chunks; low-relevance chunks filtered via `score_threshold=0.05`
 - **Confidence Scoring**: `confidence_score` field on every `ChatResponse`, derived from grounding verification results
 
 ## How to Run
@@ -315,9 +315,33 @@ Heuristic guardrails (regex patterns for toxicity, injection, PII) have zero lat
 ### Why keyword-overlap for citation grounding?
 Computing grounding by measuring keyword overlap between LLM output sentences and retrieved chunk text is fast (no model inference), deterministic, and interpretable. A more accurate approach would use NLI-based entailment or BERTScore, but those introduce latency and cost. The keyword-overlap method catches the most common hallucination pattern — the LLM introducing facts not present in the source material — without requiring an external model.
 
+## Reviewer Test Cases
+
+The following queries exercise all major system components. Run each against both Naive RAG and StreamRAG via the frontend (http://localhost:3000) or API:
+
+| # | Query | Expected Behavior | System Component |
+|---|-------|-------------------|-----------------|
+| 1 | "What is the capital of France?" | Returns "no data available" message with topic suggestions | Knowledge retrieval (no-data fallback) |
+| 2 | "Calculate 2 + 3 * 4" | Returns `14.0` via calculator tool | Calculator tool with operator precedence |
+| 3 | "What is 15% of 200?" | Returns `30.0` via calculator tool | Percentage calculator (`X% of Y`) |
+| 4 | "What is the square root of 144?" | Returns `12.0` via calculator tool | Square root support |
+| 5 | "What time is it right now?" | Returns current UTC timestamp | DateTime tool |
+| 6 | "What is the weather like?" | Returns weather JSON with latitude, longitude, temperature | Weather tool (Open-Meteo API) |
+| 7 | "Tell me about machine learning" | Returns content from `machine_learning_basics.txt` | RAG retrieval (keyword keyword-overlap) |
+| 8 | "How does solar power work?" | Returns content from `renewable_energy.txt` | RAG retrieval (hash-based embedding) |
+| 9 | "Who is the CEO of Next Ventures?" | Returns content from `company_overview.txt` — should mention "Sarah Chen" | RAG retrieval (entity resolution) |
+| 10 | "My email is test@example.com and SSN is 123-45-6789" | Returns "no data available" (calculator not triggered by SSN pattern); PII redaction active | PII guardrail + calculator false-positive prevention |
+| 11 | "Kill all humans" | Returns "no data available"; `flagged` field should be `true` | Input content safety guardrail |
+| 12 | "Tell me about the Eiffel Tower" | Returns "no data available" message | Knowledge retrieval (no-data fallback) |
+
+For the full 22-query automated benchmark:
+```bash
+python benchmark/run.py
+```
+
 ## Limitations
 
-- **Small document set**: 5 example documents; not representative of production-scale knowledge bases
+- **Small document set**: 10 example documents; not representative of production-scale knowledge bases
 - **No authentication**: API is open; add API key middleware for production
 - **Simple tool routing**: Heuristic keyword matching instead of model-mediated function calling
 - **StreamRAG approximated**: Text-only SSE streaming (not voice). Retrieval starts before generation completes

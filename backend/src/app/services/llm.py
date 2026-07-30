@@ -195,25 +195,59 @@ class EchoLLMClient:
             candidates = []
             for line in evidence.split("\n"):
                 line = line.strip()
-                if line.startswith("[") and "]" in line:
-                    colon = line.index("]")
-                    title = line[1:colon]
-                    content = line[colon + 1:].strip()
-                    if content:
-                        import re as _re
-                        qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
-                        ct = {t.strip("?,.;:!\"'()[]{}-") for t in content.lower().split()} - {""}
-                        tt = {w for w in _re.split(r"[^a-z0-9]+", title.lower()) if w}
-                        cs = len(qt & ct)
-                        tss = len(qt & tt)
-                        candidates.append((cs, tss, title, content))
+                if not line.startswith("["):
+                    continue
+                if "]" not in line:
+                    continue
+                colon = line.index("]")
+                title = line[1:colon]
+                if title.startswith("skill:"):
+                    continue
+                content = line[colon + 1:].strip()
+                if not content:
+                    continue
+                import re as _re
+                qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
+                ct = {t.strip("?,.;:!\"'()[]{}-") for t in content.lower().split()} - {""}
+                tt = {w for w in _re.split(r"[^a-z0-9]+", title.lower()) if w}
+                cs = len(qt & ct)
+                tss = len(qt & tt)
+                candidates.append((cs, tss, title, content))
             if candidates:
                 candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                _, _, best_title, best_content = candidates[0]
-                answer = f"[{best_title}] {best_content[:300]}"
+                best_cs, best_tss, best_title, best_content = candidates[0]
+                _stop = {"the","a","an","is","are","was","were","be","been","being",
+                         "have","has","had","do","does","did","will","would","shall",
+                         "should","may","might","can","could","of","in","on","at",
+                         "to","for","with","by","from","up","about","into","over",
+                         "after","and","or","but","not","so","if","it","its","this",
+                         "that","these","those","i","you","he","she","we","they",
+                         "me","my","your","his","her","our","their","what","which",
+                         "who","whom","when","where","why","how","all","each","every",
+                         "both","few","more","most","some","any","no","nor","too",
+                         "very","just","also","as","than","then","now"}
+                import re as _re
+                qt = {t.strip("?,.;:!\"'()[]{}-") for t in user_message.lower().split()} - {""}
+                meaningful = qt - _stop
+                if meaningful and best_cs >= 2:
+                    ct = {t.strip("?,.;:!\"'()[]{}-") for t in best_content.lower().split()} - {""}
+                    tt = {w for w in _re.split(r"[^a-z0-9]+", best_title.lower()) if w}
+                    if (meaningful & ct) or (meaningful & tt):
+                        answer = f"[{best_title}] {best_content[:300]}"
 
         if not answer:
-            answer = f"Fallback answer for: {user_message}"
+            topics = [
+                "machine learning", "deep learning architectures", "RAG techniques",
+                "company overview (Next Ventures)", "climate change", "weather",
+                "renewable energy", "database systems", "cybersecurity", "AI ethics",
+                "calculator", "date/time", "weather forecasts",
+            ]
+            answer = (
+                "I don't have information about that in my current knowledge base. "
+                "I can help with topics like: "
+                f"{', '.join(topics)}. "
+                "Please ask about one of these topics."
+            )
         return answer, {
             "prompt_tokens": sum(len(m.content) for m in messages) // 4,
             "completion_tokens": len(answer) // 4,

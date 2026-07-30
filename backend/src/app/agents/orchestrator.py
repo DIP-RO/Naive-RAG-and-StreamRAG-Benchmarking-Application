@@ -265,7 +265,7 @@ class AgentOrchestrator:
             grounding_score=grounding_score,
             hallucination_rate=hallucination_rate,
             confidence_score=grounding_score,
-            flagged=result.get("output_flagged", False),
+            flagged=result.get("output_flagged", False) or result.get("guardrail_input_blocked", False),
             guardrails=guardrails_trace,
             trace={
                 "retrieved_chunks": len(reranked),
@@ -436,7 +436,12 @@ class AgentOrchestrator:
     async def _maybe_run_tools(self, message: str) -> list[Any]:
         requested: list[tuple[ToolName, str]] = []
         lowered = message.lower()
-        if re.search(r"(?<!\w)[-+]?\d+\s*[\+\-\*/%]", lowered) or any(word in lowered for word in ["calculate", "compute"]):
+        has_math_kw = any(word in lowered for word in ["calculate", "compute", "plus", "minus", "times", "divided", "square root", "sqrt"])
+        has_pct_of = bool(re.search(r"\d+\s*%\s*of\s*\d+", lowered))
+        has_arith = bool(re.search(r"\d+\s*[\+\*\/%]\s*\d+", lowered))
+        has_sub = bool(re.search(r"(?<!\d)\d+\s*-\s*\d+(?!\s*-?\s*\d)", lowered))
+        is_ssn = bool(re.search(r"\d{3}-\d{2,3}-\d{4}", lowered))
+        if (has_math_kw or has_pct_of or has_arith or has_sub) and not is_ssn:
             requested.append((ToolName.calculator, message))
         if any(word in lowered for word in ["time", "date", "today", "now"]):
             requested.append((ToolName.datetime, message))

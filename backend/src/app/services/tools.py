@@ -44,6 +44,13 @@ class CalculatorTool:
 
     @staticmethod
     def _extract_expression(text: str) -> str:
+        sqrt_match = re.search(r"(?:square\s*root|sqrt)\s*(?:of\s*)?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+        if sqrt_match:
+            val = float(sqrt_match.group(1))
+            if val < 0:
+                raise ValueError(f"Cannot compute square root of negative number: {val}")
+            import math
+            return str(math.sqrt(val))
         percentage_match = re.search(
             r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE
         )
