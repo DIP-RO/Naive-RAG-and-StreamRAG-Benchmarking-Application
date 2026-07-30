@@ -435,7 +435,7 @@ class AgentOrchestrator:
     async def _maybe_run_tools(self, message: str) -> list[Any]:
         requested: list[tuple[ToolName, str]] = []
         lowered = message.lower()
-        if any(symbol in lowered for symbol in ["+", "-", "*", "/", "calculate", "compute"]):
+        if any(symbol in lowered for symbol in ["+", "-", "*", "/", "%", "calculate", "compute"]):
             requested.append((ToolName.calculator, message))
         if any(word in lowered for word in ["time", "date", "today", "now"]):
             requested.append((ToolName.datetime, message))
