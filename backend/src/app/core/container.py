@@ -17,6 +17,7 @@ from app.retrieval.embeddings import DeterministicEmbeddingProvider, OpenAIEmbed
 from app.retrieval.reranker import HybridReranker
 from app.retrieval.vector_store import InMemoryVectorStore, QdrantVectorStore, VectorStoreProtocol
 from app.services.documents import DocumentIngestionService
+from app.services.guardrails import GuardrailService
 from app.services.llm import LLMFactory
 from app.services.tools import (
     CalculatorTool,
@@ -94,6 +95,7 @@ async def build_container(settings: AppSettings) -> AppContainer:
     )
     llm = LLMFactory.build(settings)
     skills = SkillRegistry([ResearchSkill(llm=llm, model=settings.default_llm_model)])
+    guardrails = GuardrailService()
     orchestrator = AgentOrchestrator(
         AgentDependencies(
             settings=settings,
@@ -104,11 +106,12 @@ async def build_container(settings: AppSettings) -> AppContainer:
             reranker=HybridReranker(),
             tools=tools,
             skills=skills,
+            guardrails=guardrails,
         )
     )
     naive_pipeline = NaiveRagPipeline(orchestrator=orchestrator)
     stream_pipeline = StreamRagPipeline(orchestrator=orchestrator)
-    benchmark_runner = BenchmarkRunner(naive=naive_pipeline, stream=stream_pipeline)
+    benchmark_runner = BenchmarkRunner(naive=naive_pipeline, stream=stream_pipeline, guardrails=guardrails)
     document_ingestion = DocumentIngestionService(Chunker(), vector_store)
 
     return AppContainer(

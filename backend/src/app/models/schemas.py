@@ -57,6 +57,11 @@ class ChatResponse(BaseModel):
     latency_ms: float
     request_id: str
     trace: dict[str, Any] = Field(default_factory=dict)
+    grounding_score: float | None = None
+    hallucination_rate: float | None = None
+    confidence_score: float | None = None
+    flagged: bool = False
+    guardrails: dict[str, Any] = Field(default_factory=dict)
 
 
 class StreamEvent(BaseModel):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -22,6 +22,7 @@ from app.models.schemas import (
 )
 from app.retrieval.reranker import HybridReranker
 from app.retrieval.vector_store import VectorStoreProtocol
+from app.services.guardrails import GuardrailResult, GuardrailService
 from app.services.llm import LLMClient
 from app.services.tools import ToolName, ToolRegistry
 from app.skills.registry import SkillRegistry
@@ -45,6 +46,17 @@ class AgentState(TypedDict):
     answer_text: str
     usage: dict[str, int]
     started: float
+    safe_user_message: str
+    guardrail_input_blocked: bool
+    guardrail_reason: str | None
+    guardrail_details: dict[str, Any]
+    pii_redacted: bool
+    output_flagged: bool
+    output_guardrail_reason: str | None
+    grounding_score: float
+    hallucination_rate: float
+    supported_sentences: list[str]
+    unsupported_sentences: list[str]
 
 
 @dataclass(slots=True)
@@ -57,6 +69,7 @@ class AgentDependencies:
     reranker: HybridReranker
     tools: ToolRegistry
     skills: SkillRegistry
+    guardrails: GuardrailService = field(default_factory=GuardrailService)
 
 
 class AgentOrchestrator:
@@ -89,16 +102,27 @@ class AgentOrchestrator:
     async def _node_initialize(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         conversation_id = state["conversation_id"]
+        guardrail_result = self.deps.guardrails.check_input(request.message)
+        pii_detected = bool(self.deps.guardrails.detect_pii(request.message))
+        safe_message = self.deps.guardrails.redact_pii(request.message) if pii_detected else request.message
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
-        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
-        return {"history": history}
+        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=safe_message))
+        return {
+            "history": history,
+            "safe_user_message": safe_message,
+            "guardrail_input_blocked": not guardrail_result.passed,
+            "guardrail_reason": guardrail_result.reason,
+            "guardrail_details": guardrail_result.details,
+            "pii_redacted": pii_detected,
+        }
 
     async def _node_retrieve(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
         chunks = await self.deps.vector_store.search(request.message, limit=self.deps.settings.naive_top_k)
         reranked = self.deps.reranker.rerank(request.message, chunks)
-        return {"retrieved_chunks": chunks, "reranked": reranked}
+        filtered = self.deps.guardrails.filter_chunks(reranked)
+        return {"retrieved_chunks": chunks, "reranked": filtered}
 
     async def _node_run_tools(self, state: AgentState) -> dict[str, Any]:
         results = await self._maybe_run_tools(state["request"].message)
@@ -110,13 +134,14 @@ class AgentOrchestrator:
 
     async def _node_build_context(self, state: AgentState) -> dict[str, Any]:
         request = state["request"]
+        safe_message = state.get("safe_user_message", request.message)
         context_text = self._build_context_text(state["reranked"], state["tool_results"], state["skill_results"])
         summary = await self.deps.conversation_store.get_summary(state["conversation_id"])
         prompt_messages = self.deps.context_manager.build_prompt_messages(
             history=state["history"],
             summary=summary.summary if summary else None,
             retrieved_context=context_text,
-            user_message=request.message,
+            user_message=safe_message,
             budget=ContextBudget(
                 max_context_tokens=request.max_context_tokens or self.deps.settings.max_context_tokens,
                 reserved_output_tokens=self.deps.settings.max_output_tokens,
@@ -132,10 +157,21 @@ class AgentOrchestrator:
             model=request.model or self.deps.settings.default_llm_model,
             max_tokens=self.deps.settings.max_output_tokens,
         )
+        guardrail_result = self.deps.guardrails.check_output(answer_text)
+        citation_result = self.deps.guardrails.compute_grounding(answer_text, state["reranked"])
         await self.deps.conversation_store.append(state["conversation_id"], ChatMessage(role="assistant", content=answer_text))
         if count_tokens(state["context_text"]) > 2_000:
             await self.deps.conversation_store.store_summary(state["conversation_id"], self._summarize_locally(state["history"], request.message, answer_text))
-        return {"answer_text": answer_text, "usage": usage}
+        return {
+            "answer_text": answer_text,
+            "usage": usage,
+            "output_flagged": not guardrail_result.passed,
+            "output_guardrail_reason": guardrail_result.reason,
+            "grounding_score": citation_result.grounding_score,
+            "hallucination_rate": citation_result.hallucination_rate,
+            "supported_sentences": citation_result.supported_sentences,
+            "unsupported_sentences": citation_result.unsupported_sentences,
+        }
 
     @traceable(run_type="chain", name="AgentOrchestrator.answer")
     async def answer(self, request: ChatRequest) -> ChatResponse:
@@ -158,6 +194,17 @@ class AgentOrchestrator:
             "answer_text": "",
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "started": started,
+            "safe_user_message": request.message,
+            "guardrail_input_blocked": False,
+            "guardrail_reason": None,
+            "guardrail_details": {},
+            "pii_redacted": False,
+            "output_flagged": False,
+            "output_guardrail_reason": None,
+            "grounding_score": 0.0,
+            "hallucination_rate": 0.0,
+            "supported_sentences": [],
+            "unsupported_sentences": [],
         }
 
         result = await self._graph.ainvoke(initial_state)
@@ -166,6 +213,21 @@ class AgentOrchestrator:
         tool_results = result.get("tool_results", [])
         skill_results = result.get("skill_results", [])
         reranked = result.get("reranked", [])
+        grounding_score = result.get("grounding_score", 0.0)
+        hallucination_rate = result.get("hallucination_rate", 0.0)
+
+        guardrails_trace: dict[str, Any] = {
+            "input_blocked": result.get("guardrail_input_blocked", False),
+        }
+        if result.get("guardrail_reason"):
+            guardrails_trace["input_reason"] = result["guardrail_reason"]
+        if result.get("pii_redacted"):
+            guardrails_trace["pii_redacted"] = True
+        if result.get("output_flagged"):
+            guardrails_trace["output_blocked"] = True
+            guardrails_trace["output_reason"] = result.get("output_guardrail_reason")
+        if result.get("unsupported_sentences"):
+            guardrails_trace["unsupported_sentences"] = len(result["unsupported_sentences"])
 
         return ChatResponse(
             conversation_id=conversation_id,
@@ -176,6 +238,11 @@ class AgentOrchestrator:
             usage=result.get("usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
             latency_ms=latency_ms,
             request_id=request_id,
+            grounding_score=grounding_score,
+            hallucination_rate=hallucination_rate,
+            confidence_score=grounding_score,
+            flagged=result.get("output_flagged", False),
+            guardrails=guardrails_trace,
             trace={"retrieved_chunks": len(reranked), "tools": [r.name.value for r in tool_results if not isinstance(r, Exception)], "skills": [r.name for r in skill_results]},
         )
 
@@ -184,10 +251,12 @@ class AgentOrchestrator:
         started = perf_counter()
         request_id = str(uuid4())
         conversation_id = request.conversation_id or str(uuid4())
+        guardrail_result = self.deps.guardrails.check_input(request.message)
+        safe_message = self.deps.guardrails.redact_pii(request.message)
         await self.deps.conversation_store.initialize()
         history = request.history or await self.deps.conversation_store.fetch_history(conversation_id)
-        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=request.message))
-        yield StreamEvent(type="started", conversation_id=conversation_id, request_id=request_id, payload={"mode": request.mode.value}).model_dump_json()
+        await self.deps.conversation_store.append(conversation_id, ChatMessage(role="user", content=safe_message))
+        yield StreamEvent(type="started", conversation_id=conversation_id, request_id=request_id, payload={"mode": request.mode.value, "input_flagged": not guardrail_result.passed, "pii_redacted": safe_message != request.message}).model_dump_json()
 
         initial_task = asyncio.create_task(self.deps.vector_store.search(request.message, limit=self.deps.settings.stream_initial_top_k))
         broad_task = asyncio.create_task(self.deps.vector_store.search(request.message, limit=self.deps.settings.stream_final_top_k))
@@ -212,13 +281,14 @@ class AgentOrchestrator:
         except Exception:  # noqa: BLE001
             skill_results = []
 
+        safe_message = self.deps.guardrails.redact_pii(request.message)
         initial_context = self._build_context_text(initial_reranked, tool_results, skill_results)
         summary = await self.deps.conversation_store.get_summary(conversation_id)
         prompt_messages = self.deps.context_manager.build_prompt_messages(
             history=history,
             summary=summary.summary if summary else None,
             retrieved_context=initial_context,
-            user_message=request.message,
+            user_message=safe_message,
             budget=ContextBudget(
                 max_context_tokens=request.max_context_tokens or self.deps.settings.max_context_tokens,
                 reserved_output_tokens=self.deps.settings.max_output_tokens,
@@ -250,6 +320,8 @@ class AgentOrchestrator:
             yield StreamEvent(type="error", conversation_id=conversation_id, request_id=request_id, payload={"error": f"Generation failed: {exc}"}).model_dump_json()
             return
 
+        broad_chunks: list[RetrievalChunk] = []
+        broad_reranked: list[RetrievalChunk] = []
         try:
             broad_chunks = await broad_task
             broad_reranked = self.deps.reranker.rerank(request.message, broad_chunks)
@@ -264,13 +336,24 @@ class AgentOrchestrator:
             pass
 
         final_answer = "".join(answer_parts).strip()
+        output_guardrail = self.deps.guardrails.check_output(final_answer)
+        citation_chunks = broad_reranked if broad_reranked else initial_reranked
+        citation_result = self.deps.guardrails.compute_grounding(final_answer, citation_chunks)
         await self.deps.conversation_store.append(conversation_id, ChatMessage(role="assistant", content=final_answer))
         latency_ms = (perf_counter() - started) * 1000.0
         yield StreamEvent(
             type="completed",
             conversation_id=conversation_id,
             request_id=request_id,
-            payload={"answer": final_answer, "latency_ms": latency_ms, "tool_calls": self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results]},
+            payload={
+                "answer": final_answer,
+                "latency_ms": latency_ms,
+                "tool_calls": self._fmt_tool_results(tool_results) + [{"skill": r.name, "output": r.output} for r in skill_results],
+                "grounding_score": citation_result.grounding_score,
+                "hallucination_rate": citation_result.hallucination_rate,
+                "flagged": not output_guardrail.passed,
+                "guardrail_reason": output_guardrail.reason,
+            },
         ).model_dump_json()
 
     async def _maybe_run_tools(self, message: str) -> list[Any]:
