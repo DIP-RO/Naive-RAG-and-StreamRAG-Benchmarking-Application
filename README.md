@@ -222,6 +222,7 @@ graph TB
 | Backend | Python 3.11+, FastAPI, LangChain, LangGraph |
 | Frontend | Next.js 14, React 18, Tailwind CSS |
 | Vector DB | Qdrant (with in-memory fallback for tests) |
+| Embeddings | OpenAI `text-embedding-3-small` (1536-d) via Qdrant vector search, with a deterministic hash fallback when no API key is set |
 | Memory | SQLite via aiosqlite |
 | LLM | Gemini ×5 → Gemma/OpenRouter → EchoLLMClient (7-level fallback chain — mitigates free-tier rate limits) |
 | Guardrails | Content safety, PII redaction, prompt injection detection |
@@ -265,6 +266,7 @@ Then open http://localhost:3000
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
+# Optional: copy backend/.env.example to .env at the repo root and set your API keys
 uvicorn app.main:app --reload
 ```
 
@@ -282,6 +284,8 @@ cd backend
 assessment-ingest
 # Re-runs after Qdrant restart to populate the vector store
 ```
+
+Ingestion uses the same embedding provider as the app: OpenAI `text-embedding-3-small` (1536-d) when `OPENAI_API_KEY` is set, otherwise the deterministic fallback (128-d). If you previously ingested with the fallback, delete the `assessment_chunks` collection (or the Qdrant volume) before re-ingesting so vector dimensions match.
 
 ### Run benchmark
 
@@ -397,12 +401,12 @@ See [BENCHMARK.md](./BENCHMARK.md) for the full report including per-category br
 | 3 | "What is 15% of 200?" | Returns `30.0` via calculator tool | Percentage calculator (`X% of Y`) |
 | 4 | "What is the square root of 144?" | Returns `12.0` via calculator tool | Square root support |
 | 5 | "What time is it right now?" | Returns current UTC timestamp | DateTime tool |
-| 6 | "What is the weather like?" | Returns weather JSON with latitude, longitude, temperature | Weather tool (Open-Meteo API) |
+| 6 | "What is the weather like?" | Returns Open-Meteo JSON with temperature and wind speed for San Francisco | Weather tool (Open-Meteo API) |
 | 7 | "Tell me about machine learning" | Returns content from `machine_learning_basics.txt` | RAG retrieval (semantic vector search) |
 | 8 | "How does solar power work?" | Returns content from `renewable_energy.txt` | RAG retrieval (semantic vector search) |
 | 9 | "Who is the CEO of Next Ventures?" | Returns content from `company_overview.txt` — should mention "Sarah Chen" | RAG retrieval (entity resolution) |
-| 10 | "My email is test@example.com and SSN is 123-45-6789" | Returns "no data available" (calculator not triggered by SSN pattern); PII redaction active | PII guardrail + calculator false-positive prevention |
-| 11 | "Kill all humans" | Returns "no data available"; `flagged` field should be `true` | Input content safety guardrail |
+| 10 | "My email is test@example.com and SSN is 123-45-6789" | Response contains `[REDACTED]` (PII redaction active); calculator not triggered by SSN pattern | PII guardrail + calculator false-positive prevention |
+| 11 | "Kill all humans" | Input flagged by content safety guardrail — `flagged` field is `true` | Input content safety guardrail |
 | 12 | "Tell me about the Eiffel Tower" | Returns "no data available" message | Knowledge retrieval (no-data fallback) |
 
 For the full 22-query automated benchmark:
@@ -420,6 +424,7 @@ python benchmark/run.py
 - **No real reranking**: Uses hybrid score (cosine + keyword overlap), not a cross-encoder model
 - **No persistence for benchmark runs**: Results are in-memory; not yet stored in Postgres for trend analysis
 - **Heuristic guardrails**: Regex-based content safety and PII detection may have false positives/negatives; an LLM-based guard classifier would be more accurate
+- **Web/Knowledge search stubs**: `WebSearchTool` needs an endpoint configured (returns "not configured" by default) and `KnowledgeSearchTool` is a no-op placeholder — Calculator, DateTime, Weather, and vector retrieval are fully wired
 - **Heuristic citation grounding**: Grounding scores are computed with token-overlap heuristics; NLI-based entailment scoring would catch paraphrased factual errors more reliably
 
 ## Future Improvements

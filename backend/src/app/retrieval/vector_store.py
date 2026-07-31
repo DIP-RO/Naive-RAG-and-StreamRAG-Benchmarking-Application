@@ -5,11 +5,14 @@ from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as rest
+from structlog import get_logger
 
 from app.models.schemas import RetrievalChunk
 from app.retrieval.chunker import Chunk
 from app.retrieval.embeddings import EmbeddingProvider
 from app.utils.text import keyword_overlap_score
+
+logger = get_logger()
 
 
 class VectorStoreProtocol:
@@ -39,6 +42,17 @@ class QdrantVectorStore(VectorStoreProtocol):
     async def ensure_collection(self, vector_size: int = 1536) -> None:
         collections = await self.client.get_collections()
         if any(collection.name == self.collection for collection in collections.collections):
+            info = await self.client.get_collection(collection_name=self.collection)
+            existing_size = info.config.params.vectors.size
+            if existing_size != vector_size:
+                logger.warning(
+                    "qdrant_collection_dimension_mismatch",
+                    extra={
+                        "collection": self.collection,
+                        "existing_size": existing_size,
+                        "expected_size": vector_size,
+                    },
+                )
             return
         await self.client.create_collection(
             collection_name=self.collection,

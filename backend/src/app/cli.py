@@ -5,19 +5,31 @@ from pathlib import Path
 
 from qdrant_client import AsyncQdrantClient
 
-from app.core.config import get_settings
+from app.core.config import AppSettings, get_settings
 from app.retrieval.chunker import Chunker
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.retrieval.embeddings import (
+    DeterministicEmbeddingProvider,
+    OpenAIEmbeddingProvider,
+)
 from app.retrieval.vector_store import QdrantVectorStore
 
 DOCUMENTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "documents"
 
 
+def _build_embeddings(settings: AppSettings):
+    if settings.openai_api_key:
+        return OpenAIEmbeddingProvider(
+            api_key=settings.openai_api_key, model=settings.default_embedding_model
+        )
+    return DeterministicEmbeddingProvider()
+
+
 async def ingest() -> None:
     settings = get_settings()
+    embeddings = _build_embeddings(settings)
     client = AsyncQdrantClient(url=settings.qdrant_url)
-    store = QdrantVectorStore(client, settings.qdrant_collection, DeterministicEmbeddingProvider())
-    await store.ensure_collection(vector_size=128)
+    store = QdrantVectorStore(client, settings.qdrant_collection, embeddings)
+    await store.ensure_collection(vector_size=getattr(embeddings, "dimensions", 1536))
 
     chunker = Chunker()
     total = 0

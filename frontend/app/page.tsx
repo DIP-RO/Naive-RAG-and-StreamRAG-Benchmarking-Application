@@ -32,7 +32,7 @@ export default function Page() {
             <BarChart3 className="mx-auto h-8 w-8 text-emerald-400" aria-hidden="true" />
             <h2 className="mt-4 text-lg font-semibold text-paper">Automated Benchmark</h2>
             <p className="mt-2 text-sm text-white/60">
-              10-query test dataset with latency, cost, and accuracy measurements.
+              22-query test dataset with latency, cost, and accuracy measurements.
             </p>
           </div>
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">

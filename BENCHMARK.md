@@ -39,7 +39,7 @@ Requires the backend server running at `http://localhost:8000`.
 
 ## LLM Fallback Chain
 
-The system uses a **6-level fallback chain** to maximize uptime:
+The system uses a **7-level fallback chain** to maximize uptime:
 
 ```
 Gemini×5 → Gemma/OpenRouter → EchoLLMClient (7-level fallback)
@@ -63,9 +63,9 @@ This was designed because **all LLM providers used here are free-tier**, which h
 | Category     | Queries | Naive RAG    | StreamRAG    | Winner      |
 |--------------|---------|--------------|--------------|-------------|
 | math         | 4       | 7.9 ms       | 7.1 ms       | StreamRAG   |
-| retrieval    | 11      | 8.7 ms       | 10.5 ms      | Naive RAG   |
+| retrieval    | 12      | 9.0 ms       | 10.4 ms      | Naive RAG   |
 | tool         | 2       | 722.9 ms     | 622.9 ms     | StreamRAG   |
-| no_data      | 2       | 69.8 ms      | 13.3 ms      | StreamRAG   |
+| no_data      | 2       | 69.8 ms      | 13.2 ms      | StreamRAG   |
 | guardrails   | 2       | 11.4 ms      | 11.6 ms      | Naive RAG   |
 
 > Note: Real LLM latency depends on provider rate limits and model availability. The fallback chain ensures zero failures even when upstream APIs are throttled.
@@ -98,13 +98,13 @@ All queries pass through input and output guardrails:
 
 ### Latency
 
-Naive RAG edges ahead in average latency by 14% with the EchoLLM mock. This is expected — StreamRAG's parallel streams add event-processing overhead that isn't offset by a real LLM's generation time. With a real LLM, StreamRAG's time-to-first-token advantage (parallel retrieval + streaming generation) would dominate.
+StreamRAG wins overall by 17% (65.9 ms vs 79.4 ms average latency). The category breakdown shows where each mode excels: Naive RAG edges ahead on pure retrieval queries (9.0 ms vs 10.4 ms — fewer parallel streams, less event-processing overhead), while StreamRAG dominates tool calls (622.9 ms vs 722.9 ms) and no-data fallbacks (13.2 ms vs 69.8 ms). With a real LLM, StreamRAG's time-to-first-token advantage (parallel retrieval + streaming generation) would dominate even more.
 
 ### Correctness
 
 All 22 queries return the expected answer or fallback. Key improvements:
 - **SSN patterns no longer trigger calculator** — prevents PII from being misrouted to math tool
-- **All 10 documents retrievable** — both modes return correct document content for 11 document queries
+- **All 10 documents retrievable** — both modes return correct document content for 12 retrieval queries
 - **No-data fallback** — queries about topics outside the knowledge base show a friendly message with supported topic suggestions
 - **Guardrails** — toxic input (`flagged: true`) and PII are correctly handled
 
@@ -123,4 +123,4 @@ Both RAG modes pass 22/22 queries with 0 failures. StreamRAG wins on average lat
 - DateTime and Weather tools
 - PII redaction and input guardrails
 - No-data fallback for out-of-scope queries
-- 5-level LLM fallback for rate-limit resilience
+- 7-level LLM fallback for rate-limit resilience
