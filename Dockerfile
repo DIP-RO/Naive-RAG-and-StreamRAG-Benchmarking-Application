@@ -4,5 +4,6 @@ FROM python:3.11-slim AS backend-build
 WORKDIR /app
 COPY backend/pyproject.toml ./
 COPY backend/src ./src
+COPY documents ./documents
 RUN pip install --upgrade pip && pip install -e .
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

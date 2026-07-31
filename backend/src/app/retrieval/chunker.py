@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import uuid4
+from uuid import NAMESPACE_DNS, uuid5
 
 from app.utils.text import normalize_whitespace, split_sentences
 
@@ -14,6 +14,10 @@ class Chunk:
     content: str
     chunk_index: int
     metadata: dict[str, object]
+
+
+def _chunk_id(document_id: str, chunk_index: int) -> str:
+    return str(uuid5(NAMESPACE_DNS, f"{document_id}:{chunk_index}"))
 
 
 class Chunker:
@@ -43,7 +47,7 @@ class Chunker:
             if buffer and len(candidate) > self.max_chars:
                 chunks.append(
                     Chunk(
-                        chunk_id=str(uuid4()),
+                        chunk_id=_chunk_id(document_id, chunk_index),
                         document_id=document_id,
                         title=title,
                         content=" ".join(buffer),
@@ -57,7 +61,7 @@ class Chunker:
         if buffer:
             chunks.append(
                 Chunk(
-                    chunk_id=str(uuid4()),
+                    chunk_id=_chunk_id(document_id, chunk_index),
                     document_id=document_id,
                     title=title,
                     content=" ".join(buffer),

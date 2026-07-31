@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 
 COPY backend/pyproject.toml .
 COPY backend/src ./src
+COPY documents ./documents
 
 RUN pip install --upgrade pip && pip install -e .
 

@@ -282,10 +282,11 @@ npm run dev
 ```bash
 cd backend
 assessment-ingest
-# Re-runs after Qdrant restart to populate the vector store
 ```
 
-Ingestion uses the same embedding provider as the app: OpenAI `text-embedding-3-small` (1536-d) when `OPENAI_API_KEY` is set, otherwise the deterministic fallback (128-d). If you previously ingested with the fallback, delete the `assessment_chunks` collection (or the Qdrant volume) before re-ingesting so vector dimensions match.
+Ingestion is idempotent (deterministic chunk IDs), so re-running is safe. With Docker Compose, the backend container runs `assessment-ingest` automatically on startup (with retries until Qdrant is ready) — no manual step needed.
+
+Ingestion uses the same embedding provider as the app: OpenAI `text-embedding-3-small` (1536-d) when `OPENAI_API_KEY` is set, otherwise the deterministic fallback (128-d). If you previously ingested with a different provider, delete the `assessment_chunks` collection (or the Qdrant volume) before re-ingesting so vector dimensions match.
 
 ### Run benchmark
 

@@ -13,7 +13,10 @@ from app.retrieval.embeddings import (
 )
 from app.retrieval.vector_store import QdrantVectorStore
 
-DOCUMENTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "documents"
+DOCUMENTS_DIR = next(
+    (parent / "documents" for parent in Path(__file__).resolve().parents if (parent / "documents").is_dir()),
+    None,
+)
 
 
 def _build_embeddings(settings: AppSettings):
@@ -32,6 +35,8 @@ async def ingest() -> None:
     await store.ensure_collection(vector_size=getattr(embeddings, "dimensions", 1536))
 
     chunker = Chunker()
+    if DOCUMENTS_DIR is None:
+        raise FileNotFoundError("Could not locate the documents/ directory")
     total = 0
     for path in sorted(DOCUMENTS_DIR.glob("*.txt")):
         text = path.read_text()
@@ -47,5 +52,9 @@ async def ingest() -> None:
     print(f"Done — {total} chunks ingested")
 
 
-if __name__ == "__main__":
+def main() -> None:
     asyncio.run(ingest())
+
+
+if __name__ == "__main__":
+    main()
