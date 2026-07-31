@@ -97,9 +97,17 @@ jobs:
         working-directory: backend
       - name: Start backend server
         run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
-          curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/api/health > /dev/null 2>&1; then
+              echo "Backend healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend failed to become healthy within 60s"
+          cat /tmp/uvicorn.log
+          exit 1
         working-directory: backend/src
       - name: Run benchmark
         run: python run.py

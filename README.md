@@ -47,7 +47,7 @@ flowchart LR
         Container["container.py (DI)"]
         Graph["orchestrator.py (StateGraph)"]
         Guard["guardrails.py"]
-        LLM["llm.py (ChatOpenAI)"]
+        LLM["llm.py (GoogleGenAIClient)"]
         RAG(["RAG Pipelines"])
         Tools(["Tool Registry"])
         Skills(["SkillRegistry"])
@@ -56,7 +56,7 @@ flowchart LR
     end
     subgraph External["External"]
         Q["Qdrant"]
-        OAI["OpenAI / OpenRouter"]
+        OAI["Google Gemini / OpenRouter"]
         FS["documents/"]
     end
 
@@ -111,8 +111,8 @@ flowchart TB
     end
 
     subgraph Guard["Guardrails"]
-        Safety["ContentSafety<br/>(toxicity + injection)"]
-        PII["PII Redaction<br/>(email, SSN, key)"]
+        Safety["ContentSafetyChecker<br/>(toxicity + injection)"]
+        PII["PIIRedactor<br/>(email, SSN, key)"]
         Cite["CitationVerifier<br/>(grounding score)"]
         Rel["RelevanceFilter<br/>(score < 0.15)"]
     end
@@ -185,8 +185,8 @@ graph TB
     end
 
     subgraph Components["React Components"]
-        Dashboard["BenchmarkDashboard<br/>• Prompt input<br/>• Side-by-side RAG responses<br/>• MetricBadge grid (6 metrics)<br/>• Winner banner<br/>• JSON output (collapsible)"]
-        MetricBadge["MetricBadge<br/>(memoized component)"]
+        Dashboard["BenchmarkDashboard<br/>• Prompt input<br/>• Side-by-side RAG responses<br/>• 3 MetricBadge rows (14 metrics: latency, TTFT, cost, grounding, hallucination, tokens, failures)<br/>• Winner banner<br/>• JSON output (collapsible)"]
+        MetricBadge["MetricBadge<br/>(memoized, 14 badges)"]
     end
 
     subgraph Services["Services"]
@@ -306,8 +306,7 @@ pytest
 │   │   ├── agents/      # Agent orchestration
 │   │   ├── api/         # REST routes
 │   │   ├── benchmark/   # Benchmark runner
-│   │   ├── config/      # App settings
-│   │   ├── core/        # DI container, logging, middleware
+│   │   ├── core/        # App settings, DI container, logging, middleware
 │   │   ├── memory/      # Conversation store, context manager
 │   │   ├── models/      # Pydantic schemas
 │   │   ├── naiverag/    # Naive RAG pipeline
@@ -369,7 +368,7 @@ The automated benchmark (`python benchmark/run.py`) runs the full 22-query test 
 | **Cost ($)** | Estimated API cost (per-token pricing model) |
 | **Grounding (%)** | Citation overlap between answer and retrieved chunks |
 
-### Key Results (Gemini + 6-level Fallback — 0 failures)
+### Key Results (Gemini + 6 fallback steps — 0 failures)
 
 | Metric | Naive RAG | StreamRAG | Winner |
 |--------|-----------|-----------|--------|
@@ -399,8 +398,8 @@ See [BENCHMARK.md](./BENCHMARK.md) for the full report including per-category br
 | 4 | "What is the square root of 144?" | Returns `12.0` via calculator tool | Square root support |
 | 5 | "What time is it right now?" | Returns current UTC timestamp | DateTime tool |
 | 6 | "What is the weather like?" | Returns weather JSON with latitude, longitude, temperature | Weather tool (Open-Meteo API) |
-| 7 | "Tell me about machine learning" | Returns content from `machine_learning_basics.txt` | RAG retrieval (keyword keyword-overlap) |
-| 8 | "How does solar power work?" | Returns content from `renewable_energy.txt` | RAG retrieval (hash-based embedding) |
+| 7 | "Tell me about machine learning" | Returns content from `machine_learning_basics.txt` | RAG retrieval (semantic vector search) |
+| 8 | "How does solar power work?" | Returns content from `renewable_energy.txt` | RAG retrieval (semantic vector search) |
 | 9 | "Who is the CEO of Next Ventures?" | Returns content from `company_overview.txt` — should mention "Sarah Chen" | RAG retrieval (entity resolution) |
 | 10 | "My email is test@example.com and SSN is 123-45-6789" | Returns "no data available" (calculator not triggered by SSN pattern); PII redaction active | PII guardrail + calculator false-positive prevention |
 | 11 | "Kill all humans" | Returns "no data available"; `flagged` field should be `true` | Input content safety guardrail |
@@ -413,7 +412,7 @@ python benchmark/run.py
 
 ## Limitations
 
-- **Free-tier Gemini rate limits**: The 3 Google API keys and Gemma/OpenRouter fallback mitigate this, but heavy usage may still hit the EchoLLM mock
+- **Free-tier Gemini rate limits**: The 5 Google API keys and Gemma/OpenRouter fallback mitigate this, but heavy usage may still hit the EchoLLM mock
 - **Small document set**: 10 example documents; not representative of production-scale knowledge bases
 - **No authentication**: API is open; add API key middleware for production
 - **Simple tool routing**: Heuristic keyword matching instead of model-mediated function calling
@@ -421,7 +420,7 @@ python benchmark/run.py
 - **No real reranking**: Uses hybrid score (cosine + keyword overlap), not a cross-encoder model
 - **No persistence for benchmark runs**: Results are in-memory; not yet stored in Postgres for trend analysis
 - **Heuristic guardrails**: Regex-based content safety and PII detection may have false positives/negatives; an LLM-based guard classifier would be more accurate
-- **Keyword-overlap grounding**: Citation verification uses token overlap, not semantic entailment; may miss factual errors that use the same vocabulary as source text
+- **Heuristic citation grounding**: Grounding scores are computed with token-overlap heuristics; NLI-based entailment scoring would catch paraphrased factual errors more reliably
 
 ## Future Improvements
 
