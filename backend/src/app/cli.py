@@ -14,7 +14,11 @@ from app.retrieval.embeddings import (
 from app.retrieval.vector_store import QdrantVectorStore
 
 DOCUMENTS_DIR = next(
-    (parent / "documents" for parent in Path(__file__).resolve().parents if (parent / "documents").is_dir()),
+    (
+        parent / "documents"
+        for parent in Path(__file__).resolve().parents
+        if (parent / "documents").is_dir()
+    ),
     None,
 )
 
