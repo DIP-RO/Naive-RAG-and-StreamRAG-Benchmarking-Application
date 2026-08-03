@@ -12,7 +12,7 @@ AI Agent comparing Naive RAG and StreamRAG in a full-stack production system wit
 > To keep the app running reliably, I engineered a **7-level fallback chain**: 5 Gemini keys → Gemma/OpenRouter → EchoLLMClient mock. Each key has a 5s timeout; if all APIs are throttled, the EchoLLM mock returns accurate chunk-based answers from the vector store with zero failures.
 >
 > **ERR_CONNECTION_REFUSED:** If the frontend shows this error, the backend process died (common on resource-constrained machines). Just restart it with `uvicorn app.main:app --host 0.0.0.0 --port 8000` from `backend/src/`. See [Architecture](#architecture) for the full fallback design.
-
+The requirements mentioned using tools like Cursor, Claude, etc. I'm familiar with and comfortable using those tools. However, due to subscription issues, I don't currently have access to the paid versions, so I wasn't able to use them for this task.
 ## Deliverables Checklist
 
 - [x] **Public GitHub repo** with code, README, and benchmark report
