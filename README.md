@@ -2,7 +2,7 @@
 
 AI Agent comparing Naive RAG and StreamRAG in a full-stack production system with guardrails, hallucination reduction, and observability.
 
-> ⚠️ **No paid APIs, no local LLM, no paid coding tools — 100% manual build**The requirements mentioned using tools like Cursor, Claude, etc. I'm familiar with and comfortable using those tools. However, due to subscription issues, I don't currently have access to the paid versions, so I wasn't able to use them for this task.
+> ⚠️ **No paid APIs, no local LLM, no paid coding tools — 100% manual build**...The requirements mentioned using tools like Cursor, Claude, etc. I'm familiar with and comfortable using those tools. However, due to subscription issues, I don't currently have access to the paid versions, so I wasn't able to use them for this task.
 >
 > I built this entire system **without any paid API key, without a GPU to run a local LLM, and without paid coding assistants** (no Cursor, no Claude Agentic, no Copilot). Every line of code was written manually. All providers (Google Gemini, OpenRouter) are free-tier, which means:
 > - **Daily quota exhausted** after ~20 requests per key
